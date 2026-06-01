@@ -48,17 +48,23 @@ if errorlevel 1 (
 echo.
 echo [OK] Built: %APP_EXE%
 echo.
-echo Run PDF field1 sample:
-echo   "%APP_EXE%" files\field1_commands.txt files\seminar_config.txt
+echo Run default batch sample:
+echo   "%APP_EXE%"
 echo.
-echo Run the default sample:
-echo   "%APP_EXE%" files\seminar1_commands.txt files\seminar_config.txt
+echo Run PDF field1 batch sample:
+echo   "%APP_EXE%" field1_commands.txt --config seminar_config.txt
 echo.
 echo Run seminar 2:
-echo   "%APP_EXE%" files\seminar2_commands.txt files\seminar_config.txt
+echo   "%APP_EXE%" seminar2_commands.txt --config seminar_config.txt
 echo.
 echo Run seminar 3:
-echo   "%APP_EXE%" files\seminar3_commands.txt files\seminar_config.txt
+echo   "%APP_EXE%" seminar3_commands.txt --config seminar_config.txt
+echo.
+echo Run server in terminal 1:
+echo   "%APP_EXE%" --server --config seminar_config.txt
+echo.
+echo Run client in terminal 2:
+echo   "%APP_EXE%" --client seminar1_commands.txt --config seminar_config.txt --shutdown
 echo.
 echo Output files will be written to the output\ folder.
 

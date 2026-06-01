@@ -7,6 +7,7 @@ Thumbs.db
 
 # Build directories and generated runtime output
 build/
+build-windows/
 cmake-build-*/
 logs/
 output/
@@ -16,6 +17,7 @@ CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+!standalone/Makefile
 
 # Compiled binaries and objects
 *.o

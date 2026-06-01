@@ -17,6 +17,7 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -838,6 +839,96 @@ static string readOutputArgument(istream& input, const string& defaultName)
     return tokens.back();
 }
 
+string executeCommand(TerrainApp& app, const string& line)
+{
+    string cleaned = line;
+    Settings::trim(cleaned);
+    if (cleaned.empty() || cleaned[0] == '#') return "SKIPPED";
+
+    log_mgr.user("Executing: " + cleaned);
+    istringstream iss(cleaned);
+    string cmd;
+    iss >> cmd;
+
+    if (cmd == "GAUSS")
+    {
+        int s;
+        double cx, cy, sx, sy, rho;
+        if (iss >> s >> cx >> cy >> sx >> sy >> rho)
+        {
+            app.addGauss(s, cx, cy, sx, sy, rho);
+            return "OK";
+        }
+        return "ERROR: invalid GAUSS command";
+    }
+    else if (cmd == "SCAN")
+    {
+        app.scan();
+    }
+    else if (cmd == "GENERATE")
+    {
+        app.generate();
+    }
+    else if (cmd == "GNUPLOT_FILE")
+    {
+        app.gnuplotFile(readOutputArgument(iss, "field.dat"));
+    }
+    else if (cmd == "PLOT")
+    {
+        string mode, fieldFile, outputFile;
+        iss >> mode >> fieldFile >> outputFile;
+        if (fieldFile == "to")
+            app.gnuplotFile(outputFile.empty() ? "field.dat" : outputFile);
+        else
+            app.plot(fieldFile, outputFile);
+    }
+    else if (cmd == "BMP_WRITE")
+    {
+        app.saveBMP(readOutputArgument(iss, "landscape.bmp"));
+    }
+    else if (cmd == "SLOPE_CHECK")
+    {
+        double threshold = 2.0;
+        iss >> threshold;
+        app.slopeCheck(threshold);
+    }
+    else if (cmd == "TRAJECTORIES")
+    {
+        app.trajectories(readOutputArgument(iss, "trajectories.bmp"));
+    }
+    else if (cmd == "DELONE" || cmd == "DELAUNAY")
+    {
+        app.delaunay(readOutputArgument(iss, "delaunay.bmp"));
+    }
+    else if (cmd == "KMEANS")
+    {
+        int k = 2;
+        iss >> k;
+        app.kmeans(k, readOutputArgument(iss, "landscape_kmeans.bmp"));
+    }
+    else if (cmd == "EM")
+    {
+        int k = 3;
+        iss >> k;
+        app.em(k, readOutputArgument(iss, "field_em.bmp"));
+    }
+    else if (cmd == "EXIT")
+    {
+        return "EXIT";
+    }
+    else if (cmd == "SHUTDOWN")
+    {
+        return "SHUTDOWN";
+    }
+    else
+    {
+        log_mgr.system("Command skipped in standalone build: " + cmd);
+        return "ERROR: unknown command " + cmd;
+    }
+
+    return "OK";
+}
+
 void executeCommands(TerrainApp& app, const string& commandFile)
 {
     ifstream file(commandFile);
@@ -850,99 +941,241 @@ void executeCommands(TerrainApp& app, const string& commandFile)
     string line;
     while (getline(file, line))
     {
-        Settings::trim(line);
-        if (line.empty() || line[0] == '#') continue;
-
-        log_mgr.user("Executing: " + line);
-        istringstream iss(line);
-        string cmd;
-        iss >> cmd;
-
-        if (cmd == "GAUSS")
-        {
-            int s;
-            double cx, cy, sx, sy, rho;
-            if (iss >> s >> cx >> cy >> sx >> sy >> rho)
-                app.addGauss(s, cx, cy, sx, sy, rho);
-        }
-        else if (cmd == "SCAN")
-        {
-            app.scan();
-        }
-        else if (cmd == "GENERATE")
-        {
-            app.generate();
-        }
-        else if (cmd == "GNUPLOT_FILE")
-        {
-            app.gnuplotFile(readOutputArgument(iss, "field.dat"));
-        }
-        else if (cmd == "PLOT")
-        {
-            string mode, fieldFile, outputFile;
-            iss >> mode >> fieldFile >> outputFile;
-            if (fieldFile == "to")
-                app.gnuplotFile(outputFile.empty() ? "field.dat" : outputFile);
-            else
-                app.plot(fieldFile, outputFile);
-        }
-        else if (cmd == "BMP_WRITE")
-        {
-            app.saveBMP(readOutputArgument(iss, "landscape.bmp"));
-        }
-        else if (cmd == "SLOPE_CHECK")
-        {
-            double threshold = 2.0;
-            iss >> threshold;
-            app.slopeCheck(threshold);
-        }
-        else if (cmd == "TRAJECTORIES")
-        {
-            app.trajectories(readOutputArgument(iss, "trajectories.bmp"));
-        }
-        else if (cmd == "DELONE" || cmd == "DELAUNAY")
-        {
-            app.delaunay(readOutputArgument(iss, "delaunay.bmp"));
-        }
-        else if (cmd == "KMEANS")
-        {
-            int k = 2;
-            iss >> k;
-            app.kmeans(k, readOutputArgument(iss, "landscape_kmeans.bmp"));
-        }
-        else if (cmd == "EM")
-        {
-            int k = 3;
-            iss >> k;
-            app.em(k, readOutputArgument(iss, "field_em.bmp"));
-        }
-        else if (cmd == "EXIT")
-        {
+        string result = executeCommand(app, line);
+        if (result == "EXIT" || result == "SHUTDOWN")
             break;
+    }
+}
+
+struct AppOptions
+{
+#ifdef _WIN32
+    string mode = "batch";
+#else
+    string mode = "batch";
+#endif
+    string commandFile = "seminar1_commands.txt";
+    string configFile = "seminar_config.txt";
+    string pipeName = R"(\\.\pipe\TerrainPipe)";
+    bool shutdown = false;
+};
+
+AppOptions parseOptions(int argc, char* argv[])
+{
+    AppOptions options;
+
+    for (int i = 1; i < argc; ++i)
+    {
+        string arg = argv[i];
+        if (arg == "--server" || arg == "server")
+        {
+            options.mode = "server";
+        }
+        else if (arg == "--client" || arg == "client")
+        {
+            options.mode = "client";
+        }
+        else if (arg == "--batch" || arg == "batch")
+        {
+            options.mode = "batch";
+        }
+        else if (arg == "--shutdown")
+        {
+            options.shutdown = true;
+        }
+        else if (arg == "--config" && i + 1 < argc)
+        {
+            options.configFile = argv[++i];
+        }
+        else if (arg == "--pipe" && i + 1 < argc)
+        {
+            options.pipeName = argv[++i];
         }
         else
         {
-            log_mgr.system("Command skipped in standalone build: " + cmd);
+            options.commandFile = arg;
         }
     }
+
+    return options;
 }
+
+#ifdef _WIN32
+string pipeRequest(const string& pipeName, const string& command)
+{
+    HANDLE pipe = CreateFileA(
+        pipeName.c_str(),
+        GENERIC_READ | GENERIC_WRITE,
+        0,
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL
+    );
+
+    if (pipe == INVALID_HANDLE_VALUE)
+    {
+        return "ERROR: cannot connect to pipe " + pipeName;
+    }
+
+    DWORD mode = PIPE_READMODE_MESSAGE;
+    SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
+
+    DWORD written = 0;
+    string payload = command + "\n";
+    BOOL ok = WriteFile(pipe, payload.c_str(), static_cast<DWORD>(payload.size()), &written, NULL);
+    if (!ok)
+    {
+        CloseHandle(pipe);
+        return "ERROR: cannot write to pipe";
+    }
+
+    char buffer[4096] = {};
+    DWORD read = 0;
+    ok = ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, NULL);
+    CloseHandle(pipe);
+
+    if (!ok && GetLastError() != ERROR_MORE_DATA)
+    {
+        return "ERROR: cannot read from pipe";
+    }
+
+    return string(buffer, read);
+}
+
+void runServer(const AppOptions& options)
+{
+    Settings cfg;
+    cfg.load(options.configFile);
+    TerrainApp app(cfg);
+
+    cout << "[INFO] Standalone server is listening on " << options.pipeName << "\n";
+
+    bool running = true;
+    while (running)
+    {
+        HANDLE pipe = CreateNamedPipeA(
+            options.pipeName.c_str(),
+            PIPE_ACCESS_DUPLEX,
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+            PIPE_UNLIMITED_INSTANCES,
+            4096,
+            4096,
+            0,
+            NULL
+        );
+
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            cout << "[ERROR] CreateNamedPipe failed: " << GetLastError() << "\n";
+            return;
+        }
+
+        BOOL connected = ConnectNamedPipe(pipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+        if (!connected)
+        {
+            CloseHandle(pipe);
+            continue;
+        }
+
+        char buffer[4096] = {};
+        DWORD read = 0;
+        string response = "OK";
+        if (ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, NULL))
+        {
+            string command(buffer, read);
+            Settings::trim(command);
+            if (command == "SHUTDOWN")
+            {
+                response = "SHUTDOWN";
+                running = false;
+            }
+            else
+            {
+                response = executeCommand(app, command);
+                if (response == "SHUTDOWN")
+                {
+                    running = false;
+                }
+            }
+        }
+        else
+        {
+            response = "ERROR: cannot read command";
+        }
+
+        DWORD written = 0;
+        WriteFile(pipe, response.c_str(), static_cast<DWORD>(response.size()), &written, NULL);
+        FlushFileBuffers(pipe);
+        DisconnectNamedPipe(pipe);
+        CloseHandle(pipe);
+    }
+
+    cout << "[INFO] Server stopped\n";
+}
+
+void runClient(const AppOptions& options)
+{
+    ifstream file(options.commandFile);
+    if (!file.is_open())
+    {
+        cout << "[ERROR] Cannot open command file: " << options.commandFile << "\n";
+        return;
+    }
+
+    string line;
+    while (getline(file, line))
+    {
+        Settings::trim(line);
+        if (line.empty() || line[0] == '#') continue;
+        if (line == "EXIT") break;
+
+        cout << "[CLIENT] " << line << "\n";
+        cout << "[SERVER] " << pipeRequest(options.pipeName, line) << "\n";
+    }
+
+    if (options.shutdown)
+    {
+        cout << "[CLIENT] SHUTDOWN\n";
+        cout << "[SERVER] " << pipeRequest(options.pipeName, "SHUTDOWN") << "\n";
+    }
+}
+#else
+void runServer(const AppOptions&)
+{
+    cout << "[ERROR] Windows Named Pipes are available only on Windows\n";
+}
+
+void runClient(const AppOptions&)
+{
+    cout << "[ERROR] Windows Named Pipes are available only on Windows\n";
+}
+#endif
 
 int main(int argc, char* argv[])
 {
     Logger::createDir("output");
     log_mgr.setup();
 
-    string commandFile = "files/field1_commands.txt";
-    if (argc > 1) commandFile = argv[1];
+    AppOptions options = parseOptions(argc, argv);
 
-    string configFile = "files/seminar_config.txt";
-    if (argc > 2) configFile = argv[2];
+    if (options.mode == "server")
+    {
+        runServer(options);
+        return 0;
+    }
+
+    if (options.mode == "client")
+    {
+        runClient(options);
+        return 0;
+    }
 
     Settings cfg;
-    cfg.load(configFile);
+    cfg.load(options.configFile);
 
     TerrainApp app(cfg);
-    executeCommands(app, commandFile);
+    executeCommands(app, options.commandFile);
 
     cout << "\nDone. Check output/ folder.\n";
     return 0;

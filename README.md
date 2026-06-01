@@ -7,40 +7,41 @@
 - CMake
 - `gnuplot` (для генерации графиков PNG)
 
-## Windows-сборка
+## Standalone Windows-сборка
 
-Рекомендуемый вариант: Visual Studio 2022 с компонентом **Desktop development with C++** и установленный `gnuplot` в `PATH`.
-Скрипт сначала пробует генератор Visual Studio 2022, а если он недоступен — MinGW Makefiles.
+Самый простой вариант для сдачи и запуска в Code::Blocks находится в папке `standalone/`.
+Там лежит один исходный файл, bat-файл сборки и все command/config файлы.
 
 ```bat
+cd standalone
 build_windows.bat
 ```
 
-Или вручную:
+Через make/GCC:
 
 ```bat
-cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
-cmake --build build-windows --config Release
+cd standalone
+mingw32-make gcc
 ```
 
-Запуск серверной части:
+Или вручную через GCC/MinGW:
 
 ```bat
-build-windows\Release\terrain_app.exe --server
+cd standalone
+gcc -x c++ -std=c++17 -Wall -Wextra -pedantic gauss_with_clusters.cpp -lstdc++ -o build-windows\gauss_with_clusters.exe
 ```
 
-В другом окне командной строки:
+Batch-запуск:
 
 ```bat
-build-windows\Release\terrain_app.exe --client commands.txt --shutdown
+build-windows\gauss_with_clusters.exe field1_commands.txt --config seminar_config.txt
 ```
 
-Также можно собрать MinGW:
+Клиент-серверный запуск на Windows:
 
 ```bat
-cmake -S . -B build-mingw -G "MinGW Makefiles"
-cmake --build build-mingw
-build-mingw\terrain_app.exe --client commands.txt --shutdown
+build-windows\gauss_with_clusters.exe --server --config seminar_config.txt
+build-windows\gauss_with_clusters.exe --client field1_commands.txt --config seminar_config.txt --shutdown
 ```
 
 ## macOS/Linux-сборка для проверки batch-режима

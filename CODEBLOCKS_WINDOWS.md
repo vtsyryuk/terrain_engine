@@ -1,11 +1,17 @@
-# Сборка в Code::Blocks под Windows
+# Standalone-сборка в Code::Blocks под Windows
 
-## 1. Открыть проект
+## 1. Открыть папку standalone
 
-Откройте в Code::Blocks файл:
+Все файлы для сдачи standalone-версии лежат здесь:
 
 ```text
-TerrainGenerator_CodeBlocks.cbp
+standalone
+```
+
+Откройте в Code::Blocks один файл:
+
+```text
+standalone\gauss_with_clusters.cpp
 ```
 
 ## 2. Проверить компилятор
@@ -18,79 +24,57 @@ Settings -> Compiler -> Toolchain executables
 
 Выберите MinGW/GCC. Желательно GCC 8+ с поддержкой C++17.
 
-## 3. Собрать
+## 3. Собрать через bat
 
-Выберите цель:
+В `cmd`:
 
-```text
-Release
+```bat
+cd standalone
+build_windows.bat
 ```
 
-Затем:
+Или через make/GCC:
 
-```text
-Build -> Build
+```bat
+mingw32-make gcc
 ```
 
 Исполняемый файл появится здесь:
 
 ```text
-bin/Release/terrain_app.exe
+standalone\build-windows\gauss_with_clusters.exe
 ```
 
-## 4. Запуск Named Pipes
+## 4. Batch-запуск
 
-Откройте два окна `cmd` в папке проекта.
+```bat
+build-windows\gauss_with_clusters.exe field1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar2_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar3_commands.txt --config seminar_config.txt
+```
+
+## 5. Запуск Named Pipes
+
+Откройте два окна `cmd` в папке `standalone`.
 
 Окно 1:
 
 ```bat
-bin\Release\terrain_app.exe --server
+build-windows\gauss_with_clusters.exe --server --config seminar_config.txt
 ```
 
 Окно 2:
 
 ```bat
-bin\Release\terrain_app.exe --client commands.txt --shutdown
-```
-
-## 5. Семинарские примеры
-
-Для проверки примеров из PDF:
-
-```bat
-bin\Release\terrain_app.exe --config files\seminar_config.txt files\seminar1_commands.txt
-bin\Release\terrain_app.exe --config files\seminar_config.txt files\seminar2_commands.txt
-bin\Release\terrain_app.exe --config files\seminar_config.txt files\seminar3_commands.txt
+build-windows\gauss_with_clusters.exe --client field1_commands.txt --config seminar_config.txt --shutdown
 ```
 
 Результаты:
 
 ```text
-output\terrain_seminar1.png
-output\terrain_seminar2.png
-output\terrain_seminar3.png
-output\landscape_seminar1.bmp
-output\landscape_seminar2.bmp
-output\landscape_seminar3.bmp
-```
-
-## Если ошибка с std::filesystem
-
-Проект уже добавляет линковку:
-
-```text
--lstdc++fs
-```
-
-Если у вас новый MinGW и Code::Blocks пишет, что `stdc++fs` не найден, удалите эту опцию:
-
-```text
-Project -> Build options -> Linker settings -> Other linker options
-```
-
-Удалить:
-
-```text
--lstdc++fs
+standalone\output\field1.bmp
+standalone\output\trajectories.bmp
+standalone\output\fied1_delaunay.bmp
+standalone\output\landscape_kmeans.bmp
+standalone\output\fied_em_3.bmp
 ```
