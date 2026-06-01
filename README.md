@@ -10,6 +10,7 @@
 ## Windows-сборка
 
 Рекомендуемый вариант: Visual Studio 2022 с компонентом **Desktop development with C++** и установленный `gnuplot` в `PATH`.
+Скрипт сначала пробует генератор Visual Studio 2022, а если он недоступен — MinGW Makefiles.
 
 ```bat
 build_windows.bat
