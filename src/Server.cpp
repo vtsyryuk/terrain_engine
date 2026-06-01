@@ -11,14 +11,49 @@
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 namespace
 {
 std::string makeOutputPath(const std::string& filename)
 {
+    if (filename.rfind("output/", 0) == 0 || filename.rfind("output\\", 0) == 0)
+    {
+        return filename;
+    }
     std::filesystem::path path = "output";
     path /= filename;
     return path.string();
+}
+
+std::string readOutputArgument(std::istream& input, const std::string& defaultName)
+{
+    std::vector<std::string> tokens;
+    std::string token;
+    while (input >> token)
+    {
+        tokens.push_back(token);
+    }
+
+    if (tokens.empty())
+    {
+        return defaultName;
+    }
+
+    for (std::size_t i = 0; i + 1 < tokens.size(); ++i)
+    {
+        if (tokens[i] == "to")
+        {
+            return tokens[i + 1];
+        }
+    }
+
+    return tokens.back();
+}
+
+void writeClusterData(const TerrainEngine& engine)
+{
+    Scenarios::writeImageData(engine.map(), makeOutputPath("terrain_data_2d.txt"));
 }
 
 void plotFieldData(const std::string& fieldFile, const std::string& outputFile)
@@ -92,7 +127,8 @@ void Server::addGauss(int sign, double cx, double cy, double sx, double sy, doub
     }
     if (rho <= -1.0 || rho >= 1.0)
     {
-        warnings += "WARNING: Rho out of range (-1.0, 1.0) ";
+        warnings += "WARNING: Rho out of range (-1.0, 1.0); using rho=0 ";
+        rho = 0.0;
     }
 
     if (!warnings.empty())
@@ -176,14 +212,25 @@ std::string Server::executeCommand(const std::string& line)
         {
             throw std::runtime_error("Invalid GAUSS command");
         }
+        if (s == 0)
+        {
+            s = -1;
+        }
         addGauss(s, cx, cy, sx, sy, rho);
     }
     else if (token == "GENERATE") generate();
+    else if (token == "EXIT") return "EXIT";
     else if (token == "SCAN")
     {
         engine_.saveRawTerrainData(makeOutputPath("field.dat"), 1);
         log_mgr.log_system("Raw field data saved: output/field.dat");
         generate();
+    }
+    else if (token == "GNUPLOT_FILE")
+    {
+        std::string outputFile = readOutputArgument(iss, "field.dat");
+        engine_.saveRawTerrainData(makeOutputPath(outputFile), 1);
+        log_mgr.log_system("Gnuplot field data saved: " + makeOutputPath(outputFile));
     }
     else if (token == "PLOT")
     {
@@ -191,7 +238,13 @@ std::string Server::executeCommand(const std::string& line)
         std::string fieldFile;
         std::string outputFile;
         iss >> plotMode >> fieldFile >> outputFile;
-        if (!fieldFile.empty())
+        if (fieldFile == "to")
+        {
+            const std::string name = outputFile.empty() ? "field.dat" : outputFile;
+            engine_.saveRawTerrainData(makeOutputPath(name), 1);
+            log_mgr.log_system("Gnuplot field data saved: " + makeOutputPath(name));
+        }
+        else if (!fieldFile.empty())
         {
             plotFieldData(fieldFile, outputFile);
         }
@@ -203,12 +256,17 @@ std::string Server::executeCommand(const std::string& line)
     else if (token == "PLOT2D") plot2D();
     else if (token == "BMP_WRITE")
     {
-        std::string fn;
-        std::getline(iss >> std::ws, fn);
+        std::string fn = readOutputArgument(iss, "my_landscape.bmp");
         saveBMP(fn.empty() ? "my_landscape.bmp" : fn);
     }
     else if (token == "ANALIZ") analiz();
     else if (token == "SLOPE_CHECK") slopeCheck();
+    else if (token == "TRAJECTORIES")
+    {
+        const std::string outputFile = readOutputArgument(iss, "trajectories.bmp");
+        Scenarios::slopeCheck(engine_.map(), cfg_.slopeThreshold, makeOutputPath(outputFile));
+        log_mgr.log_system("Trajectories map saved: " + makeOutputPath(outputFile));
+    }
     else if (token == "COMPONENT_SEARCH") componentSearch();
     else if (token == "EM_CLUSTER")
     {
@@ -218,7 +276,38 @@ std::string Server::executeCommand(const std::string& line)
         ClusterVisualizer::visualize(makeOutputPath("em_overlay.png"));
         log_mgr.log_system("EM overlay saved: output/em_overlay.png");
     }
-    else if (token == "GEOMETRY") geometry();
+    else if (token == "KMEANS")
+    {
+        int k = std::min(cfg_.kmeansK, cfg_.maxK);
+        iss >> k;
+        const std::string outputFile = readOutputArgument(iss, "landscape_kmeans.bmp");
+        writeClusterData(engine_);
+        Analysis::kmeans_cluster(engine_.map(), k, cfg_.componentMinSize);
+        ClusterVisualizer::visualizeLabels(makeOutputPath("kmeans.txt"), makeOutputPath(outputFile));
+        log_mgr.log_system("K-means visualization saved: " + makeOutputPath(outputFile));
+    }
+    else if (token == "EM")
+    {
+        int k = cfg_.emK;
+        iss >> k;
+        const std::string outputFile = readOutputArgument(iss, "field_em.bmp");
+        writeClusterData(engine_);
+        Analysis::em_cluster(engine_.map(), k, cfg_.componentMinSize, 50);
+        ClusterVisualizer::visualize(makeOutputPath(outputFile));
+        log_mgr.log_system("EM visualization saved: " + makeOutputPath(outputFile));
+    }
+    else if (token == "GEOMETRY")
+    {
+        int minSize = cfg_.componentMinSize;
+        iss >> minSize;
+        const std::string outputFile = readOutputArgument(iss, "my_delaunay_voronoi.png");
+        Scenarios::geometryScenario(engine_.map(), minSize, makeOutputPath(outputFile));
+    }
+    else if (token == "DELONE" || token == "DELAUNAY")
+    {
+        const std::string outputFile = readOutputArgument(iss, "my_delaunay_voronoi.bmp");
+        Scenarios::geometryScenario(engine_.map(), cfg_.componentMinSize, makeOutputPath(outputFile));
+    }
     else
     {
         log_mgr.log_system("Unknown command: " + line);
@@ -255,7 +344,10 @@ void executeCommandsFromFile(Server& server, const std::string& commandFile)
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
 
         log_mgr.log_user("Executing: " + line);
-        server.processLine(line);
+        if (server.processLine(line) == "EXIT")
+        {
+            break;
+        }
     }
 
     log_mgr.log_user("All commands from file executed.");

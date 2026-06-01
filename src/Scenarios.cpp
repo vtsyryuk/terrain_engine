@@ -8,12 +8,107 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <queue>
 #include <random>
 #include <string>
 
 using namespace std;
+
+namespace
+{
+struct Rgb
+{
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+};
+
+void writeRgbBmp(const string& filename, int width, int height, const vector<Rgb>& pixels)
+{
+    ofstream f(filename, ios::binary);
+    if (!f.is_open()) return;
+
+    const int rowBytes = width * 3;
+    const int padding = (4 - (rowBytes % 4)) % 4;
+    const uint32_t imageSize = static_cast<uint32_t>((rowBytes + padding) * height);
+    const uint32_t fileSize = 54 + imageSize;
+    uint8_t header[54] = {'B', 'M'};
+    memcpy(header + 2, &fileSize, 4);
+    uint32_t offset = 54;
+    memcpy(header + 10, &offset, 4);
+    uint32_t dibSize = 40;
+    memcpy(header + 14, &dibSize, 4);
+    int32_t w = width;
+    int32_t h = height;
+    memcpy(header + 18, &w, 4);
+    memcpy(header + 22, &h, 4);
+    uint16_t planes = 1;
+    uint16_t bpp = 24;
+    memcpy(header + 26, &planes, 2);
+    memcpy(header + 28, &bpp, 2);
+    memcpy(header + 34, &imageSize, 4);
+    f.write(reinterpret_cast<char*>(header), 54);
+
+    const uint8_t zero[3] = {0, 0, 0};
+    for (int y = height - 1; y >= 0; --y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const Rgb& p = pixels[y * width + x];
+            f.put(static_cast<char>(p.b));
+            f.put(static_cast<char>(p.g));
+            f.put(static_cast<char>(p.r));
+        }
+        f.write(reinterpret_cast<const char*>(zero), padding);
+    }
+}
+
+void setPixel(vector<Rgb>& pixels, int width, int height, int x, int y, Rgb color)
+{
+    if (x >= 0 && x < width && y >= 0 && y < height)
+    {
+        pixels[y * width + x] = color;
+    }
+}
+
+void drawLine(vector<Rgb>& pixels, int width, int height, double ax, double ay, double bx, double by, Rgb color)
+{
+    int x0 = static_cast<int>(round(ax));
+    int y0 = static_cast<int>(round(ay));
+    const int x1 = static_cast<int>(round(bx));
+    const int y1 = static_cast<int>(round(by));
+    const int dx = abs(x1 - x0);
+    const int sx = x0 < x1 ? 1 : -1;
+    const int dy = -abs(y1 - y0);
+    const int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    while (true)
+    {
+        setPixel(pixels, width, height, x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        const int e2 = 2 * err;
+        if (e2 >= dy)
+        {
+            err += dy;
+            x0 += sx;
+        }
+        if (e2 <= dx)
+        {
+            err += dx;
+            y0 += sy;
+        }
+    }
+}
+
+string terminalFor(const string& filename, int width, int height)
+{
+    (void)filename;
+    return "pngcairo size " + to_string(width) + "," + to_string(height);
+}
+}
 
 struct Point2D {
     double x,y;
@@ -83,6 +178,45 @@ public:
 
     void visualize(const string& filename)
     {
+        if (filesystem::path(filename).extension() == ".bmp") {
+            vector<Rgb> pixels(static_cast<size_t>(width * height), {255, 255, 255});
+            for (const auto& t : triangles) {
+                const Point2D& a = points[t.p1];
+                const Point2D& b = points[t.p2];
+                const Point2D& c = points[t.p3];
+                drawLine(pixels, width, height, a.x, a.y, b.x, b.y, {0, 0, 255});
+                drawLine(pixels, width, height, b.x, b.y, c.x, c.y, {0, 0, 255});
+                drawLine(pixels, width, height, c.x, c.y, a.x, a.y, {0, 0, 255});
+            }
+            for (size_t i = 0; i < triangles.size(); ++i)
+                for (size_t j = i + 1; j < triangles.size(); ++j) {
+                    int shared = 0;
+                    if (triangles[i].p1 == triangles[j].p1 || triangles[i].p1 == triangles[j].p2 || triangles[i].p1 == triangles[j].p3) shared++;
+                    if (triangles[i].p2 == triangles[j].p1 || triangles[i].p2 == triangles[j].p2 || triangles[i].p2 == triangles[j].p3) shared++;
+                    if (triangles[i].p3 == triangles[j].p1 || triangles[i].p3 == triangles[j].p2 || triangles[i].p3 == triangles[j].p3) shared++;
+                    if (shared == 2) {
+                        drawLine(
+                            pixels,
+                            width,
+                            height,
+                            triangles[i].circumcenter.x,
+                            triangles[i].circumcenter.y,
+                            triangles[j].circumcenter.x,
+                            triangles[j].circumcenter.y,
+                            {255, 0, 0}
+                        );
+                    }
+                }
+            for (const auto& p : points) {
+                for (int dy = -1; dy <= 1; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx)
+                        setPixel(pixels, width, height, static_cast<int>(round(p.x)) + dx, static_cast<int>(round(p.y)) + dy, {0, 0, 0});
+            }
+            writeRgbBmp(filename, width, height, pixels);
+            Logger::info("Geometry visualization saved: " + filename);
+            return;
+        }
+
         ofstream dFile("output/delaunay.txt");
         ofstream vFile("output/voronoi.txt");
         ofstream pFile("output/points_centers.txt");
@@ -110,7 +244,7 @@ public:
         pFile.close();
 
         ofstream script("output/plot_geometry.gnuplot");
-        script << "set terminal pngcairo size 1000,1000\n";
+        script << "set terminal " << terminalFor(filename, 1000, 1000) << "\n";
         script << "set output '" << filename << "'\n";
         script << "set xrange [0:" << width << "]\n";
         script << "set yrange [0:" << height << "]\n";
@@ -273,15 +407,20 @@ void plot3D(const LandscapeMap& map)
     Logger::info("3D Plot created: output/terrain_3d.png");
 }
 
-void plot2D(const LandscapeMap& map)
+void writeImageData(const LandscapeMap& map, const string& filename)
 {
-    ofstream data("output/terrain_data_2d.txt");
+    ofstream data(filename);
     for (int y = 0; y < map.height(); ++y) {
         for (int x = 0; x < map.width(); ++x)
             data << x << " " << y << " " << map.at(x,y) << "\n";
         data << "\n";
     }
     data.close();
+}
+
+void plot2D(const LandscapeMap& map)
+{
+    writeImageData(map, "output/terrain_data_2d.txt");
 
     ofstream gp("output/my_plot_2d.gnuplot");
     gp << "set terminal pngcairo size 900,900\n";
@@ -309,6 +448,11 @@ void slopeAnalysis(const LandscapeMap& map)
 
 void slopeCheck(const LandscapeMap& map, double threshold)
 {
+    slopeCheck(map, threshold, "output/steepness_map.bmp");
+}
+
+void slopeCheck(const LandscapeMap& map, double threshold, const string& filename)
+{
     LandscapeMap check(map.width(), map.height());
     if (threshold <= 0.0) threshold = 1.0;
     for (int y = 1; y < map.height() - 1; ++y)
@@ -317,7 +461,7 @@ void slopeCheck(const LandscapeMap& map, double threshold)
             double steep = sqrt(g.first*g.first + g.second*g.second);
             check.at(x,y) = steep < threshold ? 255.0 : 0.0;
         }
-    writeBMP(check, "output/steepness_map.bmp");
+    writeBMP(check, filename);
     Logger::info("Steepness map created (threshold = " + to_string(threshold) + ")");
 }
 
@@ -328,6 +472,11 @@ void componentSearch(const LandscapeMap& map, int k, int min_size)
 }
 
 void geometryScenario(const LandscapeMap& map, int min_size)
+{
+    geometryScenario(map, min_size, "output/my_delaunay_voronoi.png");
+}
+
+void geometryScenario(const LandscapeMap& map, int min_size, const string& filename)
 {
     auto comps = findConnectedComponents(map, min_size);
     vector<Point2D> centers;
@@ -345,7 +494,7 @@ void geometryScenario(const LandscapeMap& map, int min_size)
     }
     GeometryHandler gh(centers, map.width(), map.height());
     gh.buildDelaunay();
-    gh.visualize("output/my_delaunay_voronoi.png");
+    gh.visualize(filename);
     Logger::info("GeometryScenario completed (" + to_string(centers.size()) + " centers)");
 }
 

@@ -14,12 +14,47 @@
 #include <filesystem>
 #include <stdexcept>
 #include <algorithm>
+#include <vector>
 
 static std::string makeOutputPath(const std::string& filename)
 {
+    if (filename.rfind("output/", 0) == 0 || filename.rfind("output\\", 0) == 0)
+    {
+        return filename;
+    }
     std::filesystem::path path = "output";
     path /= filename;
     return path.string();
+}
+
+static std::string readOutputArgument(std::istream& input, const std::string& defaultName)
+{
+    std::vector<std::string> tokens;
+    std::string token;
+    while (input >> token)
+    {
+        tokens.push_back(token);
+    }
+
+    if (tokens.empty())
+    {
+        return defaultName;
+    }
+
+    for (std::size_t i = 0; i + 1 < tokens.size(); ++i)
+    {
+        if (tokens[i] == "to")
+        {
+            return tokens[i + 1];
+        }
+    }
+
+    return tokens.back();
+}
+
+static void writeClusterData(const TerrainEngine& engine)
+{
+    Scenarios::writeImageData(engine.map(), makeOutputPath("terrain_data_2d.txt"));
 }
 
 static void plotFieldData(const std::string& fieldFile, const std::string& outputFile)
@@ -88,7 +123,10 @@ void CommandProcessor::executeFile(
             continue;
         }
 
-        executeLine(line);
+        if (executeLine(line) == "EXIT")
+        {
+            break;
+        }
     }
 }
 
@@ -112,6 +150,15 @@ std::string CommandProcessor::executeLine(
         {
             throw std::runtime_error("Invalid GAUSS command");
         }
+        if (g.sign == 0)
+        {
+            g.sign = -1;
+        }
+        if (g.rho <= -1.0 || g.rho >= 1.0)
+        {
+            Logger::warn("GAUSS rho out of range; using rho=0 for PDF-compatible command");
+            g.rho = 0.0;
+        }
         engine_.addGaussian(g);
         Logger::info(
             "Added Gaussian bell at (" + std::to_string(g.cx) + ", " + std::to_string(g.cy) + ")"
@@ -121,6 +168,10 @@ std::string CommandProcessor::executeLine(
     {
         engine_.generate();
     }
+    else if (command == "EXIT")
+    {
+        return "EXIT";
+    }
     else if (command == "SCAN")
     {
         engine_.saveRawTerrainData(makeOutputPath("field.dat"), 1);
@@ -129,13 +180,14 @@ std::string CommandProcessor::executeLine(
     }
     else if (command == "BMP_WRITE")
     {
-        std::string name;
-        ss >> name;
-        if (name.empty())
-        {
-            name = "my_landscape.bmp";
-        }
+        std::string name = readOutputArgument(ss, "my_landscape.bmp");
         engine_.saveBMP(makeOutputPath(name));
+    }
+    else if (command == "GNUPLOT_FILE")
+    {
+        std::string name = readOutputArgument(ss, "field.dat");
+        engine_.saveRawTerrainData(makeOutputPath(name), 1);
+        Logger::info("Gnuplot field data saved: " + makeOutputPath(name));
     }
     else if (command == "PLOT")
     {
@@ -143,7 +195,13 @@ std::string CommandProcessor::executeLine(
         std::string fieldFile;
         std::string outputFile;
         ss >> plotMode >> fieldFile >> outputFile;
-        if (!fieldFile.empty())
+        if (fieldFile == "to")
+        {
+            const std::string name = outputFile.empty() ? "field.dat" : outputFile;
+            engine_.saveRawTerrainData(makeOutputPath(name), 1);
+            Logger::info("Gnuplot field data saved: " + makeOutputPath(name));
+        }
+        else if (!fieldFile.empty())
         {
             plotFieldData(fieldFile, outputFile);
         }
@@ -166,6 +224,12 @@ std::string CommandProcessor::executeLine(
         ss >> threshold;
         Scenarios::slopeCheck(engine_.map(), threshold);
     }
+    else if (command == "TRAJECTORIES")
+    {
+        std::string outputFile = readOutputArgument(ss, "trajectories.bmp");
+        Scenarios::slopeCheck(engine_.map(), slopeThreshold_, makeOutputPath(outputFile));
+        Logger::info("Trajectories map saved: " + makeOutputPath(outputFile));
+    }
     else if (command == "COMPONENT_SEARCH")
     {
         int k = kmeansK_;
@@ -181,11 +245,37 @@ std::string CommandProcessor::executeLine(
         ClusterVisualizer::visualize(makeOutputPath("em_overlay.png"));
         Logger::info("EM overlay saved: output/em_overlay.png");
     }
+    else if (command == "KMEANS")
+    {
+        int k = kmeansK_;
+        ss >> k;
+        const std::string outputFile = readOutputArgument(ss, "landscape_kmeans.bmp");
+        writeClusterData(engine_);
+        Analysis::kmeans_cluster(engine_.map(), k, componentMinSize_);
+        ClusterVisualizer::visualizeLabels(makeOutputPath("kmeans.txt"), makeOutputPath(outputFile));
+        Logger::info("K-means visualization saved: " + makeOutputPath(outputFile));
+    }
+    else if (command == "EM")
+    {
+        int k = emK_;
+        ss >> k;
+        const std::string outputFile = readOutputArgument(ss, "field_em.bmp");
+        writeClusterData(engine_);
+        Analysis::em_cluster(engine_.map(), k, componentMinSize_, 50);
+        ClusterVisualizer::visualize(makeOutputPath(outputFile));
+        Logger::info("EM visualization saved: " + makeOutputPath(outputFile));
+    }
     else if (command == "GEOMETRY")
     {
         int min_size = componentMinSize_;
         ss >> min_size;
-        Scenarios::geometryScenario(engine_.map(), min_size);
+        const std::string outputFile = readOutputArgument(ss, "my_delaunay_voronoi.png");
+        Scenarios::geometryScenario(engine_.map(), min_size, makeOutputPath(outputFile));
+    }
+    else if (command == "DELONE" || command == "DELAUNAY")
+    {
+        const std::string outputFile = readOutputArgument(ss, "my_delaunay_voronoi.bmp");
+        Scenarios::geometryScenario(engine_.map(), componentMinSize_, makeOutputPath(outputFile));
     }
     else
     {
