@@ -1,5 +1,40 @@
+# macOS / editor noise
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Build directories and generated runtime output
+build/
+cmake-build-*/
+logs/
+output/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Compiled binaries and objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+
+# Code::Blocks generated files
+*.depend
+*.layout
+bin/
+obj/
+
+# Generated archives
 terrain_engine_source.zip
-logs/*
-build/*
-output/*
+*.zip
