@@ -7,7 +7,7 @@
 class ServerInterface
 {
 public:
-    explicit ServerInterface(std::string pipeName);
+    explicit ServerInterface(std::string pipeName, int maxConnectAttempts = 30, int retryDelayMs = 250);
 
     void gauss(int s, double x, double y, double sx, double sy, double r);
     void generate();

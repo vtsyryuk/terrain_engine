@@ -56,5 +56,9 @@ void Config::load(const std::string& filename)
             emK = std::stoi(value);
         else if (key == "MAX_K")
             maxK = std::stoi(value);
+        else if (key == "CLIENT_CONNECT_RETRIES")
+            clientConnectRetries = std::stoi(value);
+        else if (key == "CLIENT_CONNECT_RETRY_DELAY_MS")
+            clientConnectRetryDelayMs = std::stoi(value);
     }
 }

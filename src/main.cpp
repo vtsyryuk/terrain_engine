@@ -1,6 +1,7 @@
 // Modular main: small orchestrator using TerrainEngine and CommandProcessor
 #include <iostream>
 #include <filesystem>
+#include "Config.h"
 #include "LogManager.h"
 #include "NamedPipeTransport.h"
 #include "Server.h"
@@ -132,7 +133,12 @@ void runServer(const AppOptions& options)
 
 void runClient(const AppOptions& options)
 {
-    ServerInterface server(options.pipeName);
+    Config config;
+    config.load(options.configFile);
+    ServerInterface server(
+        options.pipeName,
+        config.clientConnectRetries,
+        config.clientConnectRetryDelayMs);
     server.executeFile(options.commandsFile);
 
     if (options.shutdown)

@@ -7,10 +7,10 @@
 #include <utility>
 #include <cerrno>
 #include <cstring>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <windows.h>
-#include <vector>
 #else
 #include <csignal>
 #include <sys/socket.h>
@@ -23,8 +23,10 @@ NamedPipeServer::NamedPipeServer(std::string pipeName)
 {
 }
 
-NamedPipeClient::NamedPipeClient(std::string pipeName)
-    : pipeName_(std::move(pipeName))
+NamedPipeClient::NamedPipeClient(std::string pipeName, int maxConnectAttempts, int retryDelayMs)
+    : pipeName_(std::move(pipeName)),
+      maxConnectAttempts_(std::max(1, maxConnectAttempts)),
+      retryDelayMs_(std::max(1, retryDelayMs))
 {
 }
 
@@ -52,51 +54,12 @@ std::string commandSummary(const std::string& command)
 namespace
 {
 constexpr DWORD kBufferSize = 4096;
-constexpr int kMaxConnectAttempts = 30;
 
 std::runtime_error lastWindowsError(const std::string& prefix)
 {
     return std::runtime_error(prefix + " (WinAPI error " + std::to_string(GetLastError()) + ")");
 }
 
-void startServerProcess()
-{
-    wchar_t exePath[MAX_PATH] = {};
-    if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) == 0)
-    {
-        throw lastWindowsError("Cannot determine executable path");
-    }
-
-    std::wstring commandLine = L"\"";
-    commandLine += exePath;
-    commandLine += L"\" server";
-
-    std::vector<wchar_t> command(commandLine.begin(), commandLine.end());
-    command.push_back(L'\0');
-
-    STARTUPINFOW startupInfo = {};
-    startupInfo.cb = sizeof(startupInfo);
-    PROCESS_INFORMATION processInfo = {};
-
-    if (!CreateProcessW(
-            nullptr,
-            command.data(),
-            nullptr,
-            nullptr,
-            FALSE,
-            CREATE_NEW_CONSOLE,
-            nullptr,
-            nullptr,
-            &startupInfo,
-            &processInfo))
-    {
-        throw lastWindowsError("CreateProcessW for server failed");
-    }
-
-    CloseHandle(processInfo.hThread);
-    CloseHandle(processInfo.hProcess);
-    Sleep(1000);
-}
 }
 
 void NamedPipeServer::run(const std::function<std::string(const std::string&)>& handler)
@@ -188,9 +151,7 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
 
 std::string NamedPipeClient::send(const std::string& command) const
 {
-    bool serverStarted = false;
-
-    for (int attempt = 0; attempt < kMaxConnectAttempts; ++attempt)
+    for (int attempt = 0; attempt < maxConnectAttempts_; ++attempt)
     {
         HANDLE pipe = CreateFileA(
             pipeName_.c_str(),
@@ -207,18 +168,11 @@ std::string NamedPipeClient::send(const std::string& command) const
             const DWORD err = GetLastError();
             if (err == ERROR_PIPE_BUSY)
             {
-                WaitNamedPipeA(pipeName_.c_str(), 1000);
+                WaitNamedPipeA(pipeName_.c_str(), static_cast<DWORD>(retryDelayMs_));
                 continue;
             }
 
-            if (!serverStarted)
-            {
-                serverStarted = true;
-                startServerProcess();
-                continue;
-            }
-
-            Sleep(250);
+            Sleep(static_cast<DWORD>(retryDelayMs_));
             continue;
         }
 
@@ -244,7 +198,8 @@ std::string NamedPipeClient::send(const std::string& command) const
         return std::string(buffer, bytesRead);
     }
 
-    return "ERROR: No server";
+    return "ERROR: No server pipe after "
+        + std::to_string(maxConnectAttempts_) + " connect attempts";
 }
 
 #else
@@ -252,7 +207,6 @@ std::string NamedPipeClient::send(const std::string& command) const
 namespace
 {
 constexpr std::size_t kUnixBufferSize = 65536;
-constexpr int kMaxUnixConnectAttempts = 30;
 volatile sig_atomic_t gUnixStopRequested = 0;
 volatile sig_atomic_t gUnixServerFd = -1;
 char gUnixSocketPath[sizeof(sockaddr_un::sun_path)] = {};
@@ -441,7 +395,7 @@ std::string NamedPipeClient::send(const std::string& command) const
 {
     sockaddr_un address = makeUnixAddress(pipeName_);
 
-    for (int attempt = 0; attempt < kMaxUnixConnectAttempts; ++attempt)
+    for (int attempt = 0; attempt < maxConnectAttempts_; ++attempt)
     {
         const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (fd < 0)
@@ -471,10 +425,11 @@ std::string NamedPipeClient::send(const std::string& command) const
         }
 
         closeIfValid(fd);
-        usleep(250000);
+        usleep(static_cast<useconds_t>(retryDelayMs_) * 1000);
     }
 
-    return "ERROR: No server at Unix socket " + pipeName_;
+    return "ERROR: No server at Unix socket " + pipeName_ + " after "
+        + std::to_string(maxConnectAttempts_) + " connect attempts";
 }
 
 #endif

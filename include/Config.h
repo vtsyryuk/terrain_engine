@@ -11,6 +11,8 @@ struct Config {
     int componentMinSize = 2;
     int emK = 3;
     int maxK = 5;
+    int clientConnectRetries = 30;
+    int clientConnectRetryDelayMs = 250;
 
     void load(const std::string& filename);
 };

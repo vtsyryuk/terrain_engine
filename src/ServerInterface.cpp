@@ -8,8 +8,8 @@
 #include <stdexcept>
 #include <utility>
 
-ServerInterface::ServerInterface(std::string pipeName)
-    : pipeClient_(std::move(pipeName))
+ServerInterface::ServerInterface(std::string pipeName, int maxConnectAttempts, int retryDelayMs)
+    : pipeClient_(std::move(pipeName), maxConnectAttempts, retryDelayMs)
 {
 }
 
