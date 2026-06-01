@@ -85,7 +85,7 @@ CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO:STRING=
 CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
 
 //Value Computed by CMake.
-CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=/Users/vladt/Downloads/terrain_engine_full/build/CMakeFiles/pkgRedirects
+CMAKE_FIND_PACKAGE_REDIRECTS_DIR:STATIC=/Users/vladt/Documents/Github/terrain_engine/build/CMakeFiles/pkgRedirects
 
 //Path to a program.
 CMAKE_INSTALL_NAME_TOOL:FILEPATH=/usr/bin/install_name_tool
@@ -220,7 +220,7 @@ CMAKE_TAPI:FILEPATH=/Library/Developer/CommandLineTools/usr/bin/tapi
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
 //Value Computed by CMake
-TerrainGenerator_BINARY_DIR:STATIC=/Users/vladt/Downloads/terrain_engine_full/build
+TerrainGenerator_BINARY_DIR:STATIC=/Users/vladt/Documents/Github/terrain_engine/build
 
 //Value Computed by CMake
 TerrainGenerator_IS_TOP_LEVEL:STATIC=ON
