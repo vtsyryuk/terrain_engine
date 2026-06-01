@@ -7,13 +7,42 @@
 - CMake
 - `gnuplot` (для генерации графиков PNG)
 
-## Установка зависимостей на macOS
+## Windows-сборка
 
-```bash
-brew install cmake gnuplot
+Рекомендуемый вариант: Visual Studio 2022 с компонентом **Desktop development with C++** и установленный `gnuplot` в `PATH`.
+
+```bat
+build_windows.bat
 ```
 
-## Сборка
+Или вручную:
+
+```bat
+cmake -S . -B build-windows -G "Visual Studio 17 2022" -A x64
+cmake --build build-windows --config Release
+```
+
+Запуск серверной части:
+
+```bat
+build-windows\Release\terrain_app.exe --server
+```
+
+В другом окне командной строки:
+
+```bat
+build-windows\Release\terrain_app.exe --client commands.txt --shutdown
+```
+
+Также можно собрать MinGW:
+
+```bat
+cmake -S . -B build-mingw -G "MinGW Makefiles"
+cmake --build build-mingw
+build-mingw\terrain_app.exe --client commands.txt --shutdown
+```
+
+## macOS/Linux-сборка для проверки batch-режима
 
 ```bash
 mkdir -p build
@@ -27,7 +56,7 @@ cmake --build build
 ./build/terrain_app
 ```
 
-По умолчанию программа читает `commands.txt` и последовательно выполняет сценарии генерации, анализа и визуализации.
+На Windows запуск без параметров работает как клиент. На macOS/Linux запуск без параметров работает как batch-режим: программа читает `commands.txt` и последовательно выполняет сценарии генерации, анализа и визуализации без Named Pipes.
 
 ## Клиент-серверный режим Windows Named Pipes
 
