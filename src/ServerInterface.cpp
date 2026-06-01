@@ -90,6 +90,10 @@ void ServerInterface::executeFile(const std::string& filename)
 
     const std::string response = send(batch.str());
     std::cout << filename << " -> " << response << "\n";
+    if (response.rfind("ERROR", 0) == 0)
+    {
+        throw std::runtime_error(response);
+    }
 }
 
 std::string ServerInterface::shutdown()

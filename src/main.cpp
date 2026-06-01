@@ -93,9 +93,12 @@ void runServer(const AppOptions& options)
     NamedPipeServer server(options.pipeName);
 
     std::cout << "[INFO] Server is listening on " << options.pipeName << "\n";
-    server.run([&terrainServer](const std::string& command) {
+    server.run([&terrainServer, &options](const std::string& command) {
         if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
         {
+            Server sessionServer(options.configFile);
+            sessionServer.init();
+
             const std::size_t start = command.find('\n');
             std::istringstream input(command.substr(start == std::string::npos ? command.size() : start + 1));
             std::string line;
@@ -117,7 +120,7 @@ void runServer(const AppOptions& options)
                     break;
                 }
 
-                lastResponse = terrainServer.processLine(line);
+                lastResponse = sessionServer.processLine(line);
             }
 
             return lastResponse;

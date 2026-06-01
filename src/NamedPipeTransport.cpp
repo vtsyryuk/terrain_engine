@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <vector>
 #else
+#include <csignal>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -252,6 +253,51 @@ namespace
 {
 constexpr std::size_t kUnixBufferSize = 65536;
 constexpr int kMaxUnixConnectAttempts = 30;
+volatile sig_atomic_t gUnixStopRequested = 0;
+volatile sig_atomic_t gUnixServerFd = -1;
+char gUnixSocketPath[sizeof(sockaddr_un::sun_path)] = {};
+
+void handleUnixShutdownSignal(int)
+{
+    gUnixStopRequested = 1;
+    if (gUnixServerFd >= 0)
+    {
+        close(static_cast<int>(gUnixServerFd));
+        gUnixServerFd = -1;
+    }
+    if (gUnixSocketPath[0] != '\0')
+    {
+        unlink(gUnixSocketPath);
+    }
+}
+
+void installUnixSignalHandlers(const std::string& socketPath, int serverFd)
+{
+    std::strncpy(gUnixSocketPath, socketPath.c_str(), sizeof(gUnixSocketPath) - 1);
+    gUnixSocketPath[sizeof(gUnixSocketPath) - 1] = '\0';
+    gUnixServerFd = serverFd;
+    gUnixStopRequested = 0;
+
+    struct sigaction shutdownAction {};
+    shutdownAction.sa_handler = handleUnixShutdownSignal;
+    sigemptyset(&shutdownAction.sa_mask);
+    shutdownAction.sa_flags = 0;
+    sigaction(SIGINT, &shutdownAction, nullptr);
+    sigaction(SIGTERM, &shutdownAction, nullptr);
+
+    struct sigaction pipeAction {};
+    pipeAction.sa_handler = SIG_IGN;
+    sigemptyset(&pipeAction.sa_mask);
+    pipeAction.sa_flags = 0;
+    sigaction(SIGPIPE, &pipeAction, nullptr);
+}
+
+void clearUnixSignalState()
+{
+    gUnixServerFd = -1;
+    gUnixSocketPath[0] = '\0';
+    gUnixStopRequested = 0;
+}
 
 std::runtime_error lastUnixError(const std::string& prefix)
 {
@@ -305,6 +351,7 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
         throw lastUnixError("listen failed");
     }
 
+    installUnixSignalHandlers(pipeName_, serverFd);
     Logger::info("Unix domain socket created: " + pipeName_);
 
     bool shutdown = false;
@@ -314,6 +361,11 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
         const int clientFd = accept(serverFd, nullptr, nullptr);
         if (clientFd < 0)
         {
+            if (gUnixStopRequested)
+            {
+                break;
+            }
+
             if (errno == EINTR)
             {
                 continue;
@@ -371,9 +423,18 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
         }
     }
 
+    const bool stoppedBySignal = gUnixStopRequested != 0;
     closeIfValid(serverFd);
     unlink(pipeName_.c_str());
-    logServerEvent("Server stopped after shutdown request");
+    clearUnixSignalState();
+    if (stoppedBySignal)
+    {
+        logServerEvent("Server stopped after signal");
+    }
+    else
+    {
+        logServerEvent("Server stopped after shutdown request");
+    }
 }
 
 std::string NamedPipeClient::send(const std::string& command) const
