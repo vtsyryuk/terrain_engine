@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="TerrainGenerator" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Debug">
+				<Option output="bin/Debug/terrain_app" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Debug/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-g" />
+					<Add option="-std=c++17" />
+					<Add option="-Wall" />
+					<Add option="-DWIN32_LEAN_AND_MEAN" />
+					<Add option="-DNOMINMAX" />
+				</Compiler>
+				<Linker>
+					<Add option="-lstdc++fs" />
+				</Linker>
+			</Target>
+			<Target title="Release">
+				<Option output="bin/Release/terrain_app" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Release/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-O2" />
+					<Add option="-std=c++17" />
+					<Add option="-Wall" />
+					<Add option="-DWIN32_LEAN_AND_MEAN" />
+					<Add option="-DNOMINMAX" />
+				</Compiler>
+				<Linker>
+					<Add option="-s" />
+					<Add option="-lstdc++fs" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add directory="include" />
+		</Compiler>
+		<Unit filename="include/Analysis.h" />
+		<Unit filename="include/ClusterVisualizer.h" />
+		<Unit filename="include/CommandProcessor.h" />
+		<Unit filename="include/Config.h" />
+		<Unit filename="include/GaussianBell.h" />
+		<Unit filename="include/GnuplotRenderer.h" />
+		<Unit filename="include/ILandscapeOperations.h" />
+		<Unit filename="include/LandscapeMap.h" />
+		<Unit filename="include/LogManager.h" />
+		<Unit filename="include/Logger.h" />
+		<Unit filename="include/NamedPipeTransport.h" />
+		<Unit filename="include/Scenarios.h" />
+		<Unit filename="include/Server.h" />
+		<Unit filename="include/ServerInterface.h" />
+		<Unit filename="include/TerrainEngine.h" />
+		<Unit filename="src/Analysis.cpp" />
+		<Unit filename="src/ClusterVisualizer.cpp" />
+		<Unit filename="src/CommandProcessor.cpp" />
+		<Unit filename="src/Config.cpp" />
+		<Unit filename="src/GnuplotRenderer.cpp" />
+		<Unit filename="src/LandscapeMap.cpp" />
+		<Unit filename="src/LogManager.cpp" />
+		<Unit filename="src/Logger.cpp" />
+		<Unit filename="src/NamedPipeTransport.cpp" />
+		<Unit filename="src/Scenarios.cpp" />
+		<Unit filename="src/Server.cpp" />
+		<Unit filename="src/ServerInterface.cpp" />
+		<Unit filename="src/TerrainEngine.cpp" />
+		<Unit filename="src/main.cpp" />
+		<Extensions>
+			<code_completion />
+			<debugger />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
