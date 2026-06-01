@@ -34,6 +34,16 @@ void logServerEvent(const std::string& message)
     Logger::info(message);
     std::cout << "[SERVER] " << message << "\n";
 }
+
+std::string commandSummary(const std::string& command)
+{
+    if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
+    {
+        return "BATCH request (" + std::to_string(command.size()) + " bytes)";
+    }
+
+    return command;
+}
 }
 
 #ifdef _WIN32
@@ -143,7 +153,7 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
             {
                 try
                 {
-                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + command);
+                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + commandSummary(command));
                     response = handler(command);
                     logServerEvent("Client #" + std::to_string(clientId) + " response: " + response);
                 }
@@ -334,7 +344,7 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
             {
                 try
                 {
-                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + command);
+                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + commandSummary(command));
                     response = handler(command);
                     logServerEvent("Client #" + std::to_string(clientId) + " response: " + response);
                 }
