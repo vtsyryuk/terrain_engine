@@ -1,7 +1,12 @@
 #include "LandscapeMap.h"
 #include "TerrainEngine.h"
-#include <stdexcept>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <stdexcept>
 
 LandscapeMap::LandscapeMap(int width, int height)
     : width_(width), height_(height), data_(height, std::vector<double>(width, 0.0))
@@ -35,9 +40,9 @@ void LandscapeMap::add(const GaussianBell& b)
     for (int y=0;y<height_;y++) for (int x=0;x<width_;x++) {
         double dx = x - b.cx; double dy = y - b.cy;
         double nx = dx / b.sx; double ny = dy / b.sy;
-        double denom = 1 - b.rho*b.rho; if (fabs(denom)<1e-10) continue;
+        double denom = 1 - b.rho*b.rho; if (std::fabs(denom)<1e-10) continue;
         double q = nx*nx + ny*ny - 2*b.rho*nx*ny;
-        data_[y][x] += b.sign * exp(-0.5 * q / denom);
+        data_[y][x] += b.sign * std::exp(-0.5 * q / denom);
     }
 }
 

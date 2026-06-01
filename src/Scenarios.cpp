@@ -2,12 +2,16 @@
 #include "Logger.h"
 #include "GnuplotRenderer.h"
 #include "Analysis.h"
-#include <fstream>
-#include <random>
-#include <queue>
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <queue>
+#include <random>
+#include <string>
 
 using namespace std;
 

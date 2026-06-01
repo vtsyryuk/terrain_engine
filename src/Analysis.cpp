@@ -1,8 +1,9 @@
 #include "Analysis.h"
-#include <random>
-#include <fstream>
-#include <cmath>
+
 #include <algorithm>
+#include <cmath>
+#include <fstream>
+#include <random>
 
 using namespace std;
 
@@ -49,6 +50,7 @@ std::vector<int> kmeans_cluster(const LandscapeMap& map, int k, int min_size)
 
 std::vector<int> em_cluster(const LandscapeMap& map, int k, int min_size, int maxIter)
 {
+    (void)min_size;
     int w=map.width(), h=map.height();
     vector<pair<double,double>> points; vector<int> idx;
     for (int y=0;y<h;y++) for (int x=0;x<w;x++) if (map.at(x,y) >= 128) { points.emplace_back(x,y); idx.push_back(y*w+x); }
@@ -59,7 +61,8 @@ std::vector<int> em_cluster(const LandscapeMap& map, int k, int min_size, int ma
     vector<double> weights(k,1.0/k);
     vector<double> varx(k,100.0), vary(k,100.0);
     vector<vector<double>> resp(np, vector<double>(k,0.0));
-    auto gaussian2d=[&](int c,const pair<double,double>& p){ double dx=p.first-mu[c].first; double dy=p.second-mu[c].second; double ex=(dx*dx/varx[c]+dy*dy/vary[c])/2.0; double denom=2*M_PI*sqrt(varx[c]*vary[c]); if (denom<=0) return 1e-12; return exp(-ex)/denom; };
+    constexpr double pi = 3.14159265358979323846;
+    auto gaussian2d=[&](int c,const pair<double,double>& p){ double dx=p.first-mu[c].first; double dy=p.second-mu[c].second; double ex=(dx*dx/varx[c]+dy*dy/vary[c])/2.0; double denom=2*pi*sqrt(varx[c]*vary[c]); if (denom<=0) return 1e-12; return exp(-ex)/denom; };
     for (int iter=0;iter<maxIter;iter++){
         for (int i=0;i<np;i++){
             double s=0; for (int c=0;c<k;c++){ resp[i][c]=weights[c]*gaussian2d(c,points[i]); s+=resp[i][c]; }
