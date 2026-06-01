@@ -1,413 +1,380 @@
-# Генератор Ландшафта - Документация Проекта
+# Terrain Generator: Windows Standalone Documentation
 
-## Введение
+## Назначение
 
-Проект **Terrain Generator** — это модульное приложение на C++17 для синтеза и анализа искусственных ландшафтов. Приложение реализует полный конвейер обработки: от генерации поверхности через гауссовы колокола до кластеризации и геометрического анализа.
+Программа предназначена для генерации искусственного рельефа по набору гауссовых функций, сохранения результатов в BMP/DAT/PNG и выполнения анализа:
 
-## Архитектура Проекта
+- построение поля высот;
+- сохранение карты рельефа в BMP;
+- построение карты траекторий/крутизны;
+- триангуляция Делоне;
+- кластеризация K-means;
+- кластеризация EM;
+- запуск в режиме Windows client/server через Named Pipes.
 
-### Общая структура
+Актуальная Windows-версия находится только в папке:
 
-Программный комплекс построен на основе клиент-серверной архитектуры с использованием именованных каналов Windows (Named Pipes) в качестве транспортного механизма. Основные удобства:
-
-1. Четкое разделение ответственности: клиент отвечает только за взаимодействие с пользователем и отправку команд, сервер — за всю вычислительную работу.
-2. Возможность повторного использования: один экземпляр сервера может обслуживать множество клиентских сессий.
-3. Устойчивость к сбоям: клиент и сервер работают в разных процессах, что предотвращает полное падение системы при ошибке в одном из компонентов.
-4. Потенциал для распределенных вычислений: архитектура допускает размещение клиента и сервера на разных машинах при переходе на сетевые каналы.
-5. Удобство отладки и тестирования: компоненты могут тестироваться независимо друг от друга.
-
-Проект собирает исполняемый файл `terrain_app`, который использует статическую библиотеку `libterrain_core.a`. На Windows приложение может запускаться как сервер или клиент Named Pipes; на macOS/Linux сохраняется последовательный batch-режим для разработки и проверки основной вычислительной логики.
-
-```
-terrain_app --client commands.txt
-    ↓ Named Pipe: \\.\pipe\TerrainPipe
-terrain_app --server
-    ↓
-Server : ILandscapeOperations (вычислительная логика)
-    ├→ CommandProcessor (совместимый парсер команд)
-    ├→ TerrainEngine (генерация и визуализация)
-    ├→ Scenarios (анализ и фильтрация)
-    ├→ Analysis (кластеризация)
-    └→ ClusterVisualizer (визуализация результатов)
+```text
+standalone
 ```
 
-## Модули
+## Состав Папки Standalone
 
-### 1. TerrainEngine
-**Файлы**: `include/TerrainEngine.h`, `src/TerrainEngine.cpp`
-
-Основной движок для управления ландшафтом. Содержит объект `LandscapeMap` и координирует все операции с высотной картой.
-
-**Ключевые функции**:
-- `add(const GaussianBell& bell)` — добавить гауссиан на карту
-- `normalize()` — нормализовать значения в диапазон [0, 255]
-- `saveBMP(filename)` — сохранить как BMP файл
-- `gradient(x, y)` — вычислить градиент в точке
-
-### 2. LandscapeMap
-**Файлы**: `include/LandscapeMap.h`, `src/LandscapeMap.cpp`
-
-Хранилище высотной карты (2D массив double). Представляет поверхность ландшафта и предоставляет операции над ней.
-
-**Основные операции**:
-- Чтение/запись высот через `at(x, y)`
-- Нормализация: масштабирование значений в [0, 255]
-- Вычисление градиента (производной по x и y)
-- Сохранение в формате BMP (8-бит палитра, оттенки серого)
-
-### 3. GaussianBell
-**Файл**: `include/GaussianBell.h`
-
-Структура данных, описывающая одно гауссово возвышение:
-- `sign` — направление (1 = холм, -1 = впадина)
-- `cx, cy` — координаты центра
-- `sx, sy` — стандартные отклонения (ширина холма)
-- `rho` — амплитуда (высота/глубина)
-
-### 4. Scenarios
-**Файл**: `src/Scenarios.cpp`
-
-Пространство имен с функциями анализа и фильтрации:
-
-#### `fieldGeneration(map, bells, noise_percent)`
-Создание ландшафта из набора гауссивов.
-1. Добавить каждый гауссиан на карту
-2. Нормализовать значения
-3. Применить шум
-4. Сгладить фильтром Гаусса (2 итерации)
-
-#### `plot3D(map)` и `plot2D(map)`
-Генерация визуализаций через gnuplot.
-- **3D**: сплошная поверхность (pm3d) с шагом 5 пикселей
-- **2D**: тепловая карта с цветовой палитрой
-
-#### `slopeAnalysis(map)`
-Вычисление вектора градиента с шагом 20 пикселей.
-Результат: файл `gradient_vectors.txt` (x y angle magnitude).
-
-#### `slopeCheck(map, threshold)`
-Создание карты крутизны в формате BMP.
-- Вычисляется величина градиента: $\sqrt{g_x^2 + g_y^2}$
-- Интенсивность пикселя: `(magnitude / threshold) * 255`
-- Результат: `steepness_map.bmp` (черное = плоское, белое = крутое)
-
-#### `geometryScenario(map, min_size)`
-Построение триангуляции Делоне и диаграммы Вороного:
-1. Найти связные компоненты (пиксели > 200)
-2. Вычислить центроиды компонент
-3. Построить триангуляцию Делоне
-4. Визуализировать через gnuplot
-
-### 5. Analysis
-**Файл**: `src/Analysis.cpp`
-
-Алгоритмы кластеризации.
-
-#### K-means
-```cpp
-Analysis::kmeans_cluster(map, k, min_size)
-```
-- Инициализация случайных центроидов
-- Итеративное приписание пикселей ближайшему центру
-- Обновление центроидов
-- Критерий сходимости: максимум 100 итераций
-
-Выходные файлы:
-- `kmeans.txt` (x y label)
-
-#### Expectation-Maximization (EM)
-```cpp
-Analysis::em_cluster(map, k, em_iterations, damping)
-```
-- Инициализация гауссовых смесей
-- E-шаг: вычисление ответственности каждого кластера
-- M-шаг: обновление параметров
-- Демпирование для стабильности
-
-Выходные файлы:
-- `em_clusters.txt` (x y cluster_id)
-- `em_responsibilities.txt` (ответственности для каждого пикселя)
-
-### 6. ClusterVisualizer
-**Файлы**: `include/ClusterVisualizer.h`, `src/ClusterVisualizer.cpp`
-
-Создание PNG визуализации с наложением кластеров на исходную карту.
-
-**Процесс**:
-1. Прочитать `em_clusters.txt`
-2. Создать gnuplot скрипт с палеттой цветов
-3. Наложить точки кластеров поверх тепловой карты
-4. Сгенерировать PNG через gnuplot
-
-### 7. GnuplotRenderer
-**Файлы**: `include/GnuplotRenderer.h`, `src/GnuplotRenderer.cpp`
-
-Обертка для выполнения gnuplot скриптов.
-
-```cpp
-GnuplotRenderer::executeScript(script_path)
-```
-- Запускает gnuplot с заданным скриптом
-- Захватывает вывод для логирования ошибок
-
-### 8. Server и ILandscapeOperations
-**Файлы**: `include/ILandscapeOperations.h`, `include/Server.h`, `src/Server.cpp`
-
-Серверная часть реализует интерфейс из учебника:
-
-```cpp
-class ILandscapeOperations {
-public:
-    virtual void addGauss(int sign, double cx, double cy, double sx, double sy, double rho) = 0;
-    virtual void generate() = 0;
-    virtual void plot() = 0;
-    virtual void plot2D() = 0;
-    virtual void saveBMP(const std::string& filename = "") = 0;
-    virtual void analiz() = 0;
-    virtual void slopeCheck() = 0;
-    virtual void componentSearch() = 0;
-    virtual void geometry() = 0;
-};
+```text
+standalone/
+  gauss_with_clusters.cpp      основной single-file исходник
+  build_windows.bat            сборка через GCC/MinGW
+  Makefile                     сборка через make/mingw32-make
+  run_parallel_clients.bat     один сервер и три клиента параллельно
+  seminar_config.txt           конфигурация сетки
+  seminar1_commands.txt        команды семинара 1
+  seminar2_commands.txt        команды семинара 2
+  seminar3_commands.txt        команды семинара 3
+  commands.txt                 дополнительный пример
+  config.txt                   дополнительная конфигурация
 ```
 
-`Server` хранит состояние ландшафта между командами клиента: добавленные гауссовы колокола, карту высот и параметры из `config.txt`.
+Сгенерированные файлы создаются в:
 
-### 9. CommandProcessor
-**Файлы**: `include/CommandProcessor.h`, `src/CommandProcessor.cpp`
-
-Парсер и исполнитель команд из файла `commands.txt`.
-
-**Команды**:
-```
-GAUSS sign cx cy sx sy rho      # Добавить гауссиан
-GENERATE                         # Создать поле
-PLOT                            # 3D визуализация
-PLOT2D                          # 2D визуализация
-BMP_WRITE filename              # Сохранить BMP
-ANALIZ                          # Анализ градиентов
-SLOPE_CHECK threshold           # Карта крутизны
-COMPONENT_SEARCH k min_size     # K-means кластеризация
-EM_CLUSTER k                    # EM кластеризация
-GEOMETRY min_size               # Триангуляция Делоне
+```text
+standalone/output/
+standalone/logs/
+standalone/build-windows/
 ```
 
-### 10. NamedPipeTransport и ServerInterface
-**Файлы**: `include/NamedPipeTransport.h`, `src/NamedPipeTransport.cpp`
+Эти папки не предназначены для коммита.
 
-Транспортный слой для взаимодействия клиента и сервера через Windows Named Pipes.
+## Требования Windows
 
-**Режимы запуска**:
-```bash
-terrain_app --server
-terrain_app --client commands.txt
-terrain_app --client commands.txt --shutdown
+- Windows 10/11.
+- GCC/MinGW с поддержкой C++17.
+- Code::Blocks с MinGW или отдельный MinGW-w64.
+- Желательно добавить MinGW `bin` в `PATH`, например:
+
+```text
+C:\Program Files\CodeBlocks\MinGW\bin
 ```
 
-- `NamedPipeServer` создает канал `\\.\pipe\TerrainPipe`, принимает команды и передает их в `Server`.
-- `PipeClient` подключается к каналу, при необходимости запускает сервер через `CreateProcessW`.
-- `ServerInterface` предоставляет клиентский фасад для команд `gauss`, `generate`, `plot`, `plot2D`, `saveBMP`, `analiz`, `slopeCheck`, `componentSearch`, `geometry`.
-- Флаг `--shutdown` отправляет серверу служебную команду завершения после выполнения файла.
+Для PNG-графиков нужен `gnuplot` в `PATH`. BMP/DAT файлы создаются без gnuplot.
 
-### 11. Logger и LogManager
-**Файлы**: 
-- `include/Logger.h`, `src/Logger.cpp`
-- `include/LogManager.h`, `src/LogManager.cpp`
+## Сборка
 
-Система логирования в два файла:
-- `logs/server_system.log` / `logs/server_user.log` — серверные логи
-- `logs/client_system.log` / `logs/client_user.log` — клиентские логи
-- `logs/app_system.log` / `logs/app_user.log` — batch-режим на macOS/Linux
+Перейти в папку standalone:
 
-```cpp
-Logger::info(message);   // SYSTEM лог
-Logger::user(message);   // USER лог
-Logger::warn(message);   // SYSTEM лог (внимание)
-Logger::error(message);  // SYSTEM лог (ошибка)
+```bat
+cd standalone
 ```
 
-### 12. Config
-**Файлы**: `include/Config.h`, `src/Config.cpp`
+Сборка через bat:
 
-Загрузчик конфигурации из файла `config.txt`:
+```bat
+build_windows.bat
+```
+
+Сборка через make:
+
+```bat
+mingw32-make gcc
+```
+
+Или вручную через GCC:
+
+```bat
+gcc -x c++ -std=c++17 -Wall -Wextra -pedantic gauss_with_clusters.cpp -lstdc++ -o build-windows\gauss_with_clusters.exe
+```
+
+После сборки исполняемый файл:
+
+```text
+standalone\build-windows\gauss_with_clusters.exe
+```
+
+## Batch-Запуск
+
+Запуск по умолчанию выполняет `seminar1_commands.txt` с `seminar_config.txt`:
+
+```bat
+build-windows\gauss_with_clusters.exe
+```
+
+Явный запуск семинаров:
+
+```bat
+build-windows\gauss_with_clusters.exe seminar1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar2_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar3_commands.txt --config seminar_config.txt
+```
+
+Через make:
+
+```bat
+mingw32-make run-seminar1
+mingw32-make run-seminar2
+mingw32-make run-seminar3
+```
+
+## Client/Server Режим Windows
+
+Программа поддерживает Windows Named Pipes.
+
+Архитектура:
+
+```text
+Client process
+  -> \\.\pipe\TerrainPipe
+Server process
+  -> выполняет вычисления
+  -> пишет output-файлы
+```
+
+Один сервер может обслуживать несколько клиентских сессий. Клиент отправляет весь command-файл одним batch-запросом, поэтому каждая сессия обрабатывается независимо.
+
+Окно 1, сервер:
+
+```bat
+build-windows\gauss_with_clusters.exe --server --config seminar_config.txt
+```
+
+Окно 2, клиент:
+
+```bat
+build-windows\gauss_with_clusters.exe --client seminar1_commands.txt --config seminar_config.txt --shutdown
+```
+
+Флаг `--shutdown` отправляет серверу команду завершения после выполнения файла.
+
+## Параллельный Запуск Клиентов
+
+Для запуска трёх клиентов seminar1/2/3 через один сервер:
+
+```bat
+run_parallel_clients.bat
+```
+
+Или:
+
+```bat
+mingw32-make clients-parallel
+```
+
+Скрипт делает следующее:
+
+1. Запускает один сервер.
+2. Запускает три клиента параллельно.
+3. Все клиенты подключаются к одному каналу:
+
+```text
+\\.\pipe\TerrainPipe
+```
+
+4. После выполнения отправляет серверу `--shutdown-only`.
+
+## Конфигурация
+
+Файл:
+
+```text
+seminar_config.txt
+```
+
+Пример:
+
 ```ini
-WIDTH=900
-HEIGHT=900
-NOISE_LEVEL=5.0
-KMEANS_K=2
-SLOPE_THRESHOLD=2.0
-MIN_CLUSTER_SIZE=2
-MAX_K=5
+WIDTH=100
+HEIGHT=100
+NOISE_LEVEL=0
 ```
 
-## Поток выполнения
+Параметры:
 
-1. **Инициализация**
-   - Создать директории `output/`, `logs/`
-   - Загрузить конфигурацию
-   - Инициализировать TerrainEngine
+- `WIDTH` — ширина карты.
+- `HEIGHT` — высота карты.
+- `NOISE_LEVEL` — уровень шума в процентах.
 
-2. **Обработка команд**
-   - Прочитать `commands.txt`
-   - Парсировать и выполнить каждую команду
-   - Логировать результаты
+## Команды
 
-3. **Генерация ландшафта**
-   - Добавить гауссовы возвышения на карту
-   - Нормализовать
-   - Применить шум и сглаживание
-   - Сохранить как BMP
+### GAUSS
 
-4. **Анализ**
-   - Вычислить градиенты
-   - Создать карту крутизны
-   - Запустить кластеризацию (K-means, EM)
-   - Выполнить геометрический анализ (Делоне/Вороной)
-
-5. **Визуализация**
-   - Создать 3D и 2D графики через gnuplot
-   - Наложить кластеры на карту
-   - Сохранить PNG файлы
-
-## Выходные файлы
-
-### BMP Файлы (8-бит, оттенки серого)
-- `my_landscape.bmp` — исходная высотная карта (900×900)
-- `steepness_map.bmp` — карта крутизны (черное = плоское, белое = крутое)
-
-### PNG Файлы (gnuplot)
-- `terrain_3d.png` — 3D поверхность
-- `terrain_2d.png` — 2D тепловая карта
-- `em_overlay.png` — кластеры EM наложены на карту
-- `my_delaunay_voronoi.png` — триангуляция Делоне и диаграмма Вороного
-
-### Данные (текстовые)
-- `gradient_vectors.txt` — x y angle magnitude (шаг 20)
-- `kmeans.txt` — x y cluster_id (K-means результаты)
-- `em_clusters.txt` — x y cluster_id (EM результаты)
-- `em_responsibilities.txt` — вероятности принадлежности к кластерам
-- `delaunay.txt` — координаты ребер триангуляции
-- `voronoi.txt` — координаты ребер диаграммы Вороного
-- `points_centers.txt` — центры компонент
-
-### Скрипты Gnuplot
-- `my_plot_script.gnuplot` — скрипт для 3D визуализации
-- `my_plot_2d.gnuplot` — скрипт для 2D визуализации
-- `plot_clusters.gnuplot` — скрипт для наложения кластеров
-- `plot_geometry.gnuplot` — скрипт для геометрии
-
-### Логи
-- `logs/app_system.log` — системные сообщения
-- `logs/app_user.log` — пользовательские сообщения
-
-## Сборка и Запуск
-
-### Требования
-- C++17 компилятор (AppleClang, GCC, Clang)
-- CMake >= 3.16
-- gnuplot (для визуализации)
-- macOS: `brew install cmake gnuplot`
-
-### Сборка
-```bash
-mkdir -p build
-cmake -S . -B build
-cmake --build build
+```text
+GAUSS sign cx cy sx sy rho
 ```
 
-### Запуск
-```bash
-./build/terrain_app
-```
+Добавляет гауссову функцию.
 
-### Очистка
-```bash
-rm -rf build output logs
-```
+- `sign = 1` — холм.
+- `sign = -1` — впадина.
+- `sign = 0` — совместимость с PDF-вариантом, трактуется как `-1`.
+- `cx`, `cy` — центр.
+- `sx`, `sy` — размеры.
+- `rho` — корреляция. Если значение вне диапазона `(-1, 1)`, программа ставит `rho = 0`.
 
-## Примеры Использования
+### GENERATE
 
-### Пример 1: Простой ландшафт
-```
-# commands.txt
-GAUSS 1 450 450 150 150 0.8
+```text
 GENERATE
-PLOT
-PLOT2D
-BMP_WRITE my_landscape.bmp
 ```
 
-### Пример 2: Анализ крутизны
+Создаёт нормализованную карту рельефа.
+
+### SCAN
+
+```text
+SCAN
 ```
-GAUSS 1 150 150 80 80 0.6
-GAUSS -1 450 450 100 100 -0.4
+
+Сохраняет сырое поле в `output\field.dat`, затем выполняет генерацию.
+
+### GNUPLOT_FILE
+
+```text
+GNUPLOT_FILE 1 to field.dat
+```
+
+Сохраняет DAT-файл с текущей картой:
+
+```text
+output\field.dat
+```
+
+### BMP_WRITE
+
+```text
+BMP_WRITE 1 to field1.bmp
+```
+
+Сохраняет карту рельефа в BMP.
+
+### TRAJECTORIES
+
+```text
+TRAJECTORIES 1 to trajectories.bmp
+```
+
+Создаёт BMP-карту траекторий/крутизны.
+
+### DELONE
+
+```text
+DELONE trajectories.bmp to fied1_delaunay.bmp
+```
+
+Строит триангуляцию Делоне по центрам найденных компонент и сохраняет BMP.
+
+Также поддерживается имя:
+
+```text
+DELAUNAY
+```
+
+### KMEANS
+
+```text
+KMEANS 2 trajectories.bmp to landscape_kmeans.bmp
+```
+
+Выполняет K-means кластеризацию и сохраняет BMP с цветными кластерами.
+
+### EM
+
+```text
+EM 3 trajectories.bmp to fied_em_3.bmp
+```
+
+Выполняет EM-кластеризацию и сохраняет BMP с цветными кластерами.
+
+### PLOT
+
+```text
+PLOT 1 field.dat terrain_seminar1.png
+```
+
+Создаёт PNG-график через gnuplot.
+
+### EXIT
+
+```text
+EXIT
+```
+
+Завершает обработку command-файла.
+
+## Пример Command-Файла
+
+```text
+GAUSS 1 50 50 10 30 40
+GAUSS 1 20 10 5 5 40
+GAUSS 1 80 10 5 5 40
+GAUSS 0 20 80 5 5 40
+
 GENERATE
-ANALIZ
-SLOPE_CHECK 1.5
-BMP_WRITE my_landscape.bmp
+
+GNUPLOT_FILE 1 to field.dat
+
+BMP_WRITE 1 to field1.bmp
+
+TRAJECTORIES 1 to trajectories.bmp
+DELONE trajectories.bmp to fied1_delaunay.bmp
+
+KMEANS 2 trajectories.bmp to landscape_kmeans.bmp
+
+EM 3 trajectories.bmp to fied_em_3.bmp
+EXIT
 ```
 
-### Пример 3: Кластеризация
+## Основные Output-Файлы
+
+После запуска `seminar1_commands.txt`:
+
+```text
+output\field.dat
+output\field1.bmp
+output\trajectories.bmp
+output\fied1_delaunay.bmp
+output\landscape_kmeans.bmp
+output\fied_em_3.bmp
 ```
-GAUSS 1 200 200 100 100 0.7
-GAUSS 1 700 700 100 100 0.7
-GENERATE
-COMPONENT_SEARCH 2 100
-EM_CLUSTER 2
-GEOMETRY 50
+
+После запуска seminar-файлов:
+
+```text
+output\terrain_seminar1.png
+output\landscape_seminar1.bmp
+output\terrain_seminar2.png
+output\landscape_seminar2.bmp
+output\terrain_seminar3.png
+output\landscape_seminar3.bmp
 ```
 
-## Математика
+## Логи
 
-### Гауссово возвышение
-$$f(x,y) = \text{sign} \cdot \rho \cdot \exp\left(-\frac{(x-c_x)^2}{2\sigma_x^2} - \frac{(y-c_y)^2}{2\sigma_y^2}\right)$$
+Логи пишутся в:
 
-### Градиент
-$$\nabla f = \left(\frac{\partial f}{\partial x}, \frac{\partial f}{\partial y}\right)$$
+```text
+logs\app_system.log
+logs\app_user.log
+```
 
-Вычисляется через центральные разности:
-$$\frac{\partial f}{\partial x} \approx \frac{f(x+1,y) - f(x-1,y)}{2}$$
+В них сохраняются выполненные команды, предупреждения и сообщения о созданных файлах.
 
-### K-means
-Итеративная минимизация суммы квадратов расстояний:
-$$J = \sum_{i=1}^{N} \min_k \|x_i - \mu_k\|^2$$
+## Проверка Перед Сдачей
 
-### EM (Expectation-Maximization)
-Максимизация правдоподобия смеси гауссовых распределений:
-$$p(x) = \sum_{k=1}^{K} \pi_k \mathcal{N}(x | \mu_k, \Sigma_k)$$
+В Windows:
 
-### Триангуляция Делоне
-Условие: окружность любого треугольника не содержит других точек.
-Вычисляется методом перебора всех троек точек.
+```bat
+cd standalone
+build_windows.bat
+build-windows\gauss_with_clusters.exe seminar1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar2_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar3_commands.txt --config seminar_config.txt
+run_parallel_clients.bat
+```
 
-## Производительность
+Проверить, что появились файлы в:
 
-Типичные времена выполнения (на macOS M1):
-- Генерация поля 900×900: ~100 мс
-- K-means (k=2, 100 итераций): ~500 мс
-- EM (k=3, 100 итераций): ~1000 мс
-- Триангуляция Делоне (1000+ точек): ~100 мс
-- Gnuplot визуализация: ~1-5 сек (зависит от запроса)
+```text
+output\
+```
 
-## Расширения и Модификации
+## Важное Замечание
 
-### Добавление новой команды
-1. Обновить `CommandProcessor.cpp` для парсирования
-2. Реализовать функцию в соответствующем модуле
-3. Добавить логирование через `Logger::info()`
-
-### Изменение алгоритма кластеризации
-- Отредактировать `Analysis.cpp`
-- Предусмотреть сохранение результатов в соответствующие файлы
-
-### Кастомная визуализация
-- Создать функцию в `Scenarios.cpp` или новый модуль
-- Использовать `GnuplotRenderer` или другую графическую библиотеку
-
-## Заключение
-
-Проект демонстрирует:
-- Модульную архитектуру на C++17
-- Полный конвейер обработки геоданных
-- Применение классических алгоритмов (K-means, EM, Делоне)
-- Интеграцию с gnuplot для визуализации
-- логирование и обработку ошибок
+Client/server режим использует именно Windows Named Pipes, поэтому он предназначен для запуска на Windows. На других системах программа может быть собрана для проверки batch-логики, но режимы `--server` и `--client` сообщат, что Named Pipes доступны только на Windows.

@@ -8,10 +8,15 @@
 
 #include <stdexcept>
 #include <string>
+#include <sstream>
 
 namespace
 {
+#ifdef _WIN32
 constexpr const char* kDefaultPipeName = R"(\\.\pipe\TerrainPipe)";
+#else
+constexpr const char* kDefaultPipeName = "/tmp/terrain_engine.sock";
+#endif
 
 struct AppOptions
 {
@@ -81,10 +86,6 @@ void runBatch(const AppOptions& options)
 
 void runServer(const AppOptions& options)
 {
-#ifndef _WIN32
-    (void)options;
-    throw std::runtime_error("Windows Named Pipes are available only on Windows");
-#else
     prepareDirectories();
 
     Server terrainServer(options.configFile);
@@ -93,17 +94,41 @@ void runServer(const AppOptions& options)
 
     std::cout << "[INFO] Server is listening on " << options.pipeName << "\n";
     server.run([&terrainServer](const std::string& command) {
+        if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
+        {
+            const std::size_t start = command.find('\n');
+            std::istringstream input(command.substr(start == std::string::npos ? command.size() : start + 1));
+            std::string line;
+            std::string lastResponse = "OK";
+
+            while (std::getline(input, line))
+            {
+                if (line.empty() || line[0] == '#' || line.find_first_not_of(" \t\r\n") == std::string::npos)
+                {
+                    continue;
+                }
+
+                line.erase(0, line.find_first_not_of(" \t"));
+                line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+                std::cout << "[SERVER] Batch command: " << line << "\n";
+                if (line == "EXIT")
+                {
+                    break;
+                }
+
+                lastResponse = terrainServer.processLine(line);
+            }
+
+            return lastResponse;
+        }
+
         return terrainServer.processLine(command);
     });
-#endif
 }
 
 void runClient(const AppOptions& options)
 {
-#ifndef _WIN32
-    (void)options;
-    throw std::runtime_error("Windows Named Pipes are available only on Windows");
-#else
     ServerInterface server(options.pipeName);
     server.executeFile(options.commandsFile);
 
@@ -111,7 +136,6 @@ void runClient(const AppOptions& options)
     {
         std::cout << "SHUTDOWN -> " << server.shutdown() << "\n";
     }
-#endif
 }
 }
 

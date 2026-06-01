@@ -1,70 +1,51 @@
-# Инструкции по конвертации документации в PDF
+# Windows PDF Export
 
-## Существующие форматы
+Основная документация находится в:
 
-✓ **DOCUMENTATION.md** — исходный формат (Markdown)
-✓ **DOCUMENTATION.html** — HTML версия для браузера
-
-## Конвертация в PDF
-
-### Способ 1: Safari/Chrome (рекомендуется)
-
-```bash
-# macOS
-open DOCUMENTATION.html
+```text
+DOCUMENTATION.md
 ```
 
-Затем в браузере:
-1. Файл → Печать (⌘P)
-2. Выбрать "Сохранить как PDF"
-3. Выбрать местоположение и имя файла
+## Вариант 1: Visual Studio Code
 
-### Способ 2: Pandoc + LaTeX (требует установки)
+1. Открыть `DOCUMENTATION.md`.
+2. Установить расширение Markdown PDF или аналогичное.
+3. Выполнить экспорт в PDF.
 
-```bash
-# Установить LaTeX (MacTeX)
-brew install --cask mactex
+## Вариант 2: Browser Print to PDF
 
-# Конвертировать в PDF
+1. Открыть Markdown preview в редакторе.
+2. Скопировать или открыть preview в браузере.
+3. Нажать:
+
+```text
+Ctrl + P
+```
+
+4. Выбрать:
+
+```text
+Microsoft Print to PDF
+```
+
+## Вариант 3: Pandoc На Windows
+
+Если установлен Pandoc:
+
+```bat
 pandoc DOCUMENTATION.md -o DOCUMENTATION.pdf --toc --toc-depth=2
 ```
 
-### Способ 3: Python + WeasyPrint
+Если нужен PDF через LaTeX, дополнительно установить MiKTeX.
 
-```bash
-# Установить зависимости
-pip install weasyprint
+## Что Должно Попасть В PDF
 
-# Конвертировать
-python3 - <<'EOF'
-import weasyprint
-weasyprint.HTML('DOCUMENTATION.html').write_pdf('DOCUMENTATION.pdf')
-EOF
-```
-
-### Способ 4: Используя скрипт
-
-```bash
-chmod +x generate_pdf.sh
-./generate_pdf.sh
-```
-
-## Содержание документации
-
-- **Введение** — обзор проекта
-- **Архитектура** — структура системы
-- **10 основных модулей** с описанием функций
-- **Поток выполнения** — последовательность операций
-- **Выходные файлы** — полный список результатов
-- **Сборка и запуск** — инструкции
-- **Примеры использования** — практические примеры
-- **Математика** — описание алгоритмов
-- **Производительность** — тестовые данные
-- **Расширения** — как модифицировать проект
-
-## Примечания
-
-- HTML версия хорошо отображается во всех современных браузерах
-- Математические формулы в HTML отображаются как LaTeX код
-- Для лучшего качества PDF используйте Safari или Chrome
-- Дополнительные ресурсы в папке `files/`
+- Windows standalone-сборка.
+- Code::Blocks/GCC/MinGW.
+- `standalone\gauss_with_clusters.cpp`.
+- `build_windows.bat`.
+- `mingw32-make gcc`.
+- Batch-запуск seminar-команд.
+- Client/server через Windows Named Pipes.
+- Параллельный запуск трёх клиентов через один сервер.
+- Описание command/config файлов и выходных файлов.

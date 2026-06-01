@@ -51,8 +51,8 @@ echo.
 echo Run default batch sample:
 echo   "%APP_EXE%"
 echo.
-echo Run PDF field1 batch sample:
-echo   "%APP_EXE%" field1_commands.txt --config seminar_config.txt
+echo Run seminar 1:
+echo   "%APP_EXE%" seminar1_commands.txt --config seminar_config.txt
 echo.
 echo Run seminar 2:
 echo   "%APP_EXE%" seminar2_commands.txt --config seminar_config.txt
@@ -65,6 +65,9 @@ echo   "%APP_EXE%" --server --config seminar_config.txt
 echo.
 echo Run client in terminal 2:
 echo   "%APP_EXE%" --client seminar1_commands.txt --config seminar_config.txt --shutdown
+echo.
+echo Run seminar1, seminar2 and seminar3 clients in parallel:
+echo   run_parallel_clients.bat
 echo.
 echo Output files will be written to the output\ folder.
 

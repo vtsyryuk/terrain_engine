@@ -48,7 +48,7 @@ standalone\build-windows\gauss_with_clusters.exe
 ## 4. Batch-запуск
 
 ```bat
-build-windows\gauss_with_clusters.exe field1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar1_commands.txt --config seminar_config.txt
 build-windows\gauss_with_clusters.exe seminar2_commands.txt --config seminar_config.txt
 build-windows\gauss_with_clusters.exe seminar3_commands.txt --config seminar_config.txt
 ```
@@ -66,15 +66,27 @@ build-windows\gauss_with_clusters.exe --server --config seminar_config.txt
 Окно 2:
 
 ```bat
-build-windows\gauss_with_clusters.exe --client field1_commands.txt --config seminar_config.txt --shutdown
+build-windows\gauss_with_clusters.exe --client seminar1_commands.txt --config seminar_config.txt --shutdown
 ```
 
-Результаты:
+## 6. Параллельный запуск трёх клиентов
+
+В папке `standalone`:
+
+```bat
+run_parallel_clients.bat
+```
+
+Или через make:
+
+```bat
+mingw32-make clients-parallel
+```
+
+Этот запуск стартует один общий сервер и три клиентские сессии через один Named Pipe:
 
 ```text
-standalone\output\field1.bmp
-standalone\output\trajectories.bmp
-standalone\output\fied1_delaunay.bmp
-standalone\output\landscape_kmeans.bmp
-standalone\output\fied_em_3.bmp
+\\.\pipe\TerrainPipe
 ```
+
+Каждый клиент отправляет свой command-файл одним batch-запросом, поэтому сервер обрабатывает `seminar1`, `seminar2` и `seminar3` как отдельные сессии.

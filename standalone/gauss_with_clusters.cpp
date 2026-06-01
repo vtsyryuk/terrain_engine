@@ -947,6 +947,24 @@ void executeCommands(TerrainApp& app, const string& commandFile)
     }
 }
 
+string executeCommandBlock(TerrainApp& app, const string& commands)
+{
+    istringstream input(commands);
+    string line;
+    string last = "OK";
+
+    while (getline(input, line))
+    {
+        last = executeCommand(app, line);
+        if (last == "EXIT" || last == "SHUTDOWN")
+            break;
+        if (last.rfind("ERROR:", 0) == 0)
+            return last;
+    }
+
+    return last == "EXIT" ? "OK" : last;
+}
+
 struct AppOptions
 {
 #ifdef _WIN32
@@ -958,6 +976,7 @@ struct AppOptions
     string configFile = "seminar_config.txt";
     string pipeName = R"(\\.\pipe\TerrainPipe)";
     bool shutdown = false;
+    bool shutdownOnly = false;
 };
 
 AppOptions parseOptions(int argc, char* argv[])
@@ -982,6 +1001,11 @@ AppOptions parseOptions(int argc, char* argv[])
         else if (arg == "--shutdown")
         {
             options.shutdown = true;
+        }
+        else if (arg == "--shutdown-only")
+        {
+            options.shutdownOnly = true;
+            options.mode = "client";
         }
         else if (arg == "--config" && i + 1 < argc)
         {
@@ -1047,7 +1071,6 @@ void runServer(const AppOptions& options)
 {
     Settings cfg;
     cfg.load(options.configFile);
-    TerrainApp app(cfg);
 
     cout << "[INFO] Standalone server is listening on " << options.pipeName << "\n";
 
@@ -1078,7 +1101,7 @@ void runServer(const AppOptions& options)
             continue;
         }
 
-        char buffer[4096] = {};
+        char buffer[65536] = {};
         DWORD read = 0;
         string response = "OK";
         if (ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, NULL))
@@ -1090,9 +1113,16 @@ void runServer(const AppOptions& options)
                 response = "SHUTDOWN";
                 running = false;
             }
+            else if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
+            {
+                size_t pos = command.find('\n');
+                TerrainApp sessionApp(cfg);
+                response = executeCommandBlock(sessionApp, command.substr(pos + 1));
+            }
             else
             {
-                response = executeCommand(app, command);
+                TerrainApp sessionApp(cfg);
+                response = executeCommand(sessionApp, command);
                 if (response == "SHUTDOWN")
                 {
                     running = false;
@@ -1116,6 +1146,13 @@ void runServer(const AppOptions& options)
 
 void runClient(const AppOptions& options)
 {
+    if (options.shutdownOnly)
+    {
+        cout << "[CLIENT] SHUTDOWN\n";
+        cout << "[SERVER] " << pipeRequest(options.pipeName, "SHUTDOWN") << "\n";
+        return;
+    }
+
     ifstream file(options.commandFile);
     if (!file.is_open())
     {
@@ -1123,16 +1160,20 @@ void runClient(const AppOptions& options)
         return;
     }
 
+    ostringstream batch;
+    batch << "BATCH\n";
+
     string line;
     while (getline(file, line))
     {
         Settings::trim(line);
         if (line.empty() || line[0] == '#') continue;
         if (line == "EXIT") break;
-
-        cout << "[CLIENT] " << line << "\n";
-        cout << "[SERVER] " << pipeRequest(options.pipeName, line) << "\n";
+        batch << line << "\n";
     }
+
+    cout << "[CLIENT] Sending batch: " << options.commandFile << "\n";
+    cout << "[SERVER] " << pipeRequest(options.pipeName, batch.str()) << "\n";
 
     if (options.shutdown)
     {

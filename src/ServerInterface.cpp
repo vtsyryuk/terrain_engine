@@ -70,6 +70,9 @@ void ServerInterface::executeFile(const std::string& filename)
 
     log_mgr.log_user("Reading commands from: " + filename);
 
+    std::ostringstream batch;
+    batch << "BATCH\n";
+
     std::string line;
     while (std::getline(file, line))
     {
@@ -82,9 +85,11 @@ void ServerInterface::executeFile(const std::string& filename)
         line.erase(line.find_last_not_of(" \t\r\n") + 1);
 
         log_mgr.log_user("Executing: " + line);
-        const std::string response = send(line);
-        std::cout << line << " -> " << response << "\n";
+        batch << line << "\n";
     }
+
+    const std::string response = send(batch.str());
+    std::cout << filename << " -> " << response << "\n";
 }
 
 std::string ServerInterface::shutdown()

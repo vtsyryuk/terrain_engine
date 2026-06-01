@@ -5,10 +5,16 @@
 #include <iostream>
 #include <stdexcept>
 #include <utility>
+#include <cerrno>
+#include <cstring>
 
 #ifdef _WIN32
 #include <windows.h>
 #include <vector>
+#else
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 #endif
 
 NamedPipeServer::NamedPipeServer(std::string pipeName)
@@ -19,6 +25,15 @@ NamedPipeServer::NamedPipeServer(std::string pipeName)
 NamedPipeClient::NamedPipeClient(std::string pipeName)
     : pipeName_(std::move(pipeName))
 {
+}
+
+namespace
+{
+void logServerEvent(const std::string& message)
+{
+    Logger::info(message);
+    std::cout << "[SERVER] " << message << "\n";
+}
 }
 
 #ifdef _WIN32
@@ -76,6 +91,7 @@ void startServerProcess()
 void NamedPipeServer::run(const std::function<std::string(const std::string&)>& handler)
 {
     bool shutdown = false;
+    int clientId = 0;
 
     while (!shutdown)
     {
@@ -107,7 +123,8 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
             throw lastWindowsError("ConnectNamedPipe failed");
         }
 
-        Logger::info("Client connected");
+        ++clientId;
+        logServerEvent("Client #" + std::to_string(clientId) + " connected via " + pipeName_);
 
         char buffer[kBufferSize] = {};
         DWORD bytesRead = 0;
@@ -118,6 +135,7 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
             std::string command(buffer, bytesRead);
             if (command == "SHUTDOWN")
             {
+                logServerEvent("Client #" + std::to_string(clientId) + " requested server shutdown");
                 response = "OK SHUTDOWN";
                 shutdown = true;
             }
@@ -125,18 +143,21 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
             {
                 try
                 {
-                    Logger::info("Received: " + command);
+                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + command);
                     response = handler(command);
+                    logServerEvent("Client #" + std::to_string(clientId) + " response: " + response);
                 }
                 catch (const std::exception& ex)
                 {
                     response = std::string("ERROR ") + ex.what();
+                    logServerEvent("Client #" + std::to_string(clientId) + " failed: " + response);
                 }
             }
         }
         else
         {
             response = "ERROR read failed";
+            logServerEvent("Client #" + std::to_string(clientId) + " read failed");
         }
 
         DWORD bytesWritten = 0;
@@ -144,9 +165,14 @@ void NamedPipeServer::run(const std::function<std::string(const std::string&)>& 
         FlushFileBuffers(pipe);
         DisconnectNamedPipe(pipe);
         CloseHandle(pipe);
-        Logger::info("Client disconnected");
-        Logger::info("Pipe closed. Ready for new client.");
+        logServerEvent("Client #" + std::to_string(clientId) + " disconnected");
+        if (!shutdown)
+        {
+            logServerEvent("Ready for next client");
+        }
     }
+
+    logServerEvent("Server stopped after shutdown request");
 }
 
 std::string NamedPipeClient::send(const std::string& command) const
@@ -212,14 +238,172 @@ std::string NamedPipeClient::send(const std::string& command) const
 
 #else
 
-void NamedPipeServer::run(const std::function<std::string(const std::string&)>&)
+namespace
 {
-    throw std::runtime_error("Windows Named Pipes are available only on Windows");
+constexpr std::size_t kUnixBufferSize = 65536;
+constexpr int kMaxUnixConnectAttempts = 30;
+
+std::runtime_error lastUnixError(const std::string& prefix)
+{
+    return std::runtime_error(prefix + " (" + std::strerror(errno) + ")");
 }
 
-std::string NamedPipeClient::send(const std::string&) const
+void closeIfValid(int fd)
 {
-    throw std::runtime_error("Windows Named Pipes are available only on Windows");
+    if (fd >= 0)
+    {
+        close(fd);
+    }
+}
+
+sockaddr_un makeUnixAddress(const std::string& socketPath)
+{
+    sockaddr_un address {};
+    address.sun_family = AF_UNIX;
+
+    if (socketPath.size() >= sizeof(address.sun_path))
+    {
+        throw std::runtime_error("Unix socket path is too long: " + socketPath);
+    }
+
+    std::strncpy(address.sun_path, socketPath.c_str(), sizeof(address.sun_path) - 1);
+    return address;
+}
+}
+
+void NamedPipeServer::run(const std::function<std::string(const std::string&)>& handler)
+{
+    const int serverFd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (serverFd < 0)
+    {
+        throw lastUnixError("socket failed");
+    }
+
+    unlink(pipeName_.c_str());
+
+    sockaddr_un address = makeUnixAddress(pipeName_);
+    if (bind(serverFd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0)
+    {
+        closeIfValid(serverFd);
+        throw lastUnixError("bind failed");
+    }
+
+    if (listen(serverFd, SOMAXCONN) < 0)
+    {
+        closeIfValid(serverFd);
+        unlink(pipeName_.c_str());
+        throw lastUnixError("listen failed");
+    }
+
+    Logger::info("Unix domain socket created: " + pipeName_);
+
+    bool shutdown = false;
+    int clientId = 0;
+    while (!shutdown)
+    {
+        const int clientFd = accept(serverFd, nullptr, nullptr);
+        if (clientFd < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+
+            closeIfValid(serverFd);
+            unlink(pipeName_.c_str());
+            throw lastUnixError("accept failed");
+        }
+
+        ++clientId;
+        logServerEvent("Client #" + std::to_string(clientId) + " connected via " + pipeName_);
+
+        char buffer[kUnixBufferSize] = {};
+        const ssize_t bytesRead = read(clientFd, buffer, sizeof(buffer) - 1);
+        std::string response;
+
+        if (bytesRead > 0)
+        {
+            std::string command(buffer, static_cast<std::size_t>(bytesRead));
+            if (command == "SHUTDOWN")
+            {
+                logServerEvent("Client #" + std::to_string(clientId) + " requested server shutdown");
+                response = "OK SHUTDOWN";
+                shutdown = true;
+            }
+            else
+            {
+                try
+                {
+                    logServerEvent("Client #" + std::to_string(clientId) + " executing: " + command);
+                    response = handler(command);
+                    logServerEvent("Client #" + std::to_string(clientId) + " response: " + response);
+                }
+                catch (const std::exception& ex)
+                {
+                    response = std::string("ERROR ") + ex.what();
+                    logServerEvent("Client #" + std::to_string(clientId) + " failed: " + response);
+                }
+            }
+        }
+        else
+        {
+            response = "ERROR read failed";
+            logServerEvent("Client #" + std::to_string(clientId) + " read failed");
+        }
+
+        const ssize_t ignored = write(clientFd, response.c_str(), response.size());
+        (void)ignored;
+        closeIfValid(clientFd);
+        logServerEvent("Client #" + std::to_string(clientId) + " disconnected");
+        if (!shutdown)
+        {
+            logServerEvent("Ready for next client");
+        }
+    }
+
+    closeIfValid(serverFd);
+    unlink(pipeName_.c_str());
+    logServerEvent("Server stopped after shutdown request");
+}
+
+std::string NamedPipeClient::send(const std::string& command) const
+{
+    sockaddr_un address = makeUnixAddress(pipeName_);
+
+    for (int attempt = 0; attempt < kMaxUnixConnectAttempts; ++attempt)
+    {
+        const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0)
+        {
+            throw lastUnixError("socket failed");
+        }
+
+        if (connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0)
+        {
+            const ssize_t bytesWritten = write(fd, command.c_str(), command.size());
+            if (bytesWritten < 0)
+            {
+                closeIfValid(fd);
+                throw lastUnixError("write failed");
+            }
+
+            char buffer[kUnixBufferSize] = {};
+            const ssize_t bytesRead = read(fd, buffer, sizeof(buffer) - 1);
+            closeIfValid(fd);
+
+            if (bytesRead < 0)
+            {
+                throw lastUnixError("read failed");
+            }
+
+            return std::string(buffer, static_cast<std::size_t>(bytesRead));
+        }
+
+        closeIfValid(fd);
+        usleep(250000);
+    }
+
+    return "ERROR: No server at Unix socket " + pipeName_;
 }
 
 #endif

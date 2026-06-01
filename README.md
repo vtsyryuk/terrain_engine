@@ -1,104 +1,127 @@
+# Terrain Generator: Windows Standalone
 
-# Terrain Generator Refactored
+Проект подготовлен для запуска на Windows как standalone-приложение из папки `standalone/`.
+
+Основной файл:
+
+```text
+standalone\gauss_with_clusters.cpp
+```
+
+В этой папке также лежат все command/config файлы, bat-скрипты и Makefile для сборки через GCC/MinGW.
 
 ## Требования
 
-- C++17
-- CMake
-- `gnuplot` (для генерации графиков PNG)
+- Windows 10/11.
+- GCC/MinGW с поддержкой C++17.
+- Code::Blocks с MinGW или отдельный MinGW-w64.
+- `gnuplot` в `PATH` для PNG-графиков.
 
-## Standalone Windows-сборка
-
-Самый простой вариант для сдачи и запуска в Code::Blocks находится в папке `standalone/`.
-Там лежит один исходный файл, bat-файл сборки и все command/config файлы.
+## Сборка
 
 ```bat
 cd standalone
 build_windows.bat
 ```
 
-Через make/GCC:
+Или через make:
 
 ```bat
 cd standalone
 mingw32-make gcc
 ```
 
-Или вручную через GCC/MinGW:
+Или вручную:
 
 ```bat
 cd standalone
 gcc -x c++ -std=c++17 -Wall -Wextra -pedantic gauss_with_clusters.cpp -lstdc++ -o build-windows\gauss_with_clusters.exe
 ```
 
-Batch-запуск:
+## Batch-Запуск
 
 ```bat
-build-windows\gauss_with_clusters.exe field1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar1_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar2_commands.txt --config seminar_config.txt
+build-windows\gauss_with_clusters.exe seminar3_commands.txt --config seminar_config.txt
 ```
 
-Клиент-серверный запуск на Windows:
+Запуск по умолчанию:
+
+```bat
+build-windows\gauss_with_clusters.exe
+```
+
+## Client/Server Named Pipes
+
+Окно 1:
 
 ```bat
 build-windows\gauss_with_clusters.exe --server --config seminar_config.txt
-build-windows\gauss_with_clusters.exe --client field1_commands.txt --config seminar_config.txt --shutdown
 ```
 
-## macOS/Linux-сборка для проверки batch-режима
+Окно 2:
 
-```bash
-mkdir -p build
-cmake -S . -B build
-cmake --build build
+```bat
+build-windows\gauss_with_clusters.exe --client seminar1_commands.txt --config seminar_config.txt --shutdown
 ```
 
-## Запуск
+Используется один Windows Named Pipe:
 
-```bash
-./build/terrain_app
+```text
+\\.\pipe\TerrainPipe
 ```
 
-На Windows запуск без параметров работает как клиент. На macOS/Linux запуск без параметров работает как batch-режим: программа читает `commands.txt` и последовательно выполняет сценарии генерации, анализа и визуализации без Named Pipes.
+Один сервер может обслуживать несколько клиентских сессий. Клиент отправляет command-файл одним batch-запросом.
 
-## Клиент-серверный режим Windows Named Pipes
+## Параллельный Запуск Клиентов
 
-На Windows приложение можно запустить как сервер вычислений и отдельный клиент команд:
-
-```bash
-terrain_app --server
-terrain_app --client commands.txt
+```bat
+run_parallel_clients.bat
 ```
 
-Клиент отправляет команды через канал `\\.\pipe\TerrainPipe`, а сервер выполняет генерацию, анализ и сохранение файлов. Чтобы после выполнения команд остановить сервер, используйте:
+Или:
 
-```bash
-terrain_app --client commands.txt --shutdown
+```bat
+mingw32-make clients-parallel
 ```
 
-## Что создаётся
+Скрипт запускает один сервер и три клиента:
 
-Основные файлы заметны в папке `output/`:
+```text
+seminar1_commands.txt
+seminar2_commands.txt
+seminar3_commands.txt
+```
 
-- `output/my_landscape.bmp`
-- `output/terrain_3d.png`
-- `output/terrain_2d.png`
-- `output/gradient_vectors.txt`
-- `output/steepness_map.bmp`
-- `output/em_clusters.txt`
-- `output/em_responsibilities.txt`
-- `output/em_overlay.png`
-- `output/my_delaunay_voronoi.png`
-- `output/delaunay.txt`
-- `output/voronoi.txt`
-- `output/points_centers.txt`
+## Output
 
-Дополнительные вспомогательные файлы также могут появляться в `output/`:
+Результаты создаются в:
 
-- `output/my_plot_script.gnuplot`
-- `output/my_plot_2d.gnuplot`
-- `output/plot_clusters.gnuplot`
-- `output/plot_geometry.gnuplot`
-- `output/terrain_data.txt`
-- `output/terrain_data_2d.txt`
+```text
+standalone\output\
+```
 
-Логи записываются в папку `logs/`.
+Основные файлы:
+
+```text
+field1.bmp
+trajectories.bmp
+fied1_delaunay.bmp
+landscape_kmeans.bmp
+fied_em_3.bmp
+terrain_seminar1.png
+terrain_seminar2.png
+terrain_seminar3.png
+landscape_seminar1.bmp
+landscape_seminar2.bmp
+landscape_seminar3.bmp
+```
+
+Подробная Windows-документация:
+
+```text
+DOCUMENTATION.md
+CODEBLOCKS_WINDOWS.md
+standalone\README.md
+```
