@@ -35,9 +35,9 @@ echo [INFO] Compiler: %CXX%
 echo [INFO] Building standalone %SRC%...
 
 if /I "%CXX%"=="gcc" (
-    gcc -x c++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -lstdc++ -o "%APP_EXE%"
+    gcc -x c++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -static -static-libgcc -static-libstdc++ -lstdc++ -o "%APP_EXE%"
 ) else (
-    g++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -o "%APP_EXE%"
+    g++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -static -static-libgcc -static-libstdc++ -o "%APP_EXE%"
 )
 
 if errorlevel 1 (

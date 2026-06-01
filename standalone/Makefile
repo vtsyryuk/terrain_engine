@@ -1,4 +1,5 @@
 GCC ?= gcc
+CROSS_GCC ?= x86_64-w64-mingw32-g++
 GCCFLAGS ?= -x c++ -std=c++17 -Wall -Wextra -pedantic
 LDFLAGS ?= -lstdc++
 
@@ -17,11 +18,15 @@ RM := rm -f
 NULL := /dev/null
 endif
 
-.PHONY: all gcc run run-seminar1 run-seminar2 run-seminar3 server client clients-parallel clean
+.PHONY: all gcc windows-cross run run-seminar1 run-seminar2 run-seminar3 server client clients-parallel clean
 
 all: gcc
 
 gcc: $(APP)
+
+windows-cross:
+	mkdir -p "$(BUILD_DIR)"
+	$(CROSS_GCC) -std=c++17 -Wall -Wextra -pedantic "$(SRC)" -static -static-libgcc -static-libstdc++ -o "$(BUILD_DIR)/gauss_with_clusters.exe"
 
 $(APP): $(SRC)
 	$(MKDIR)

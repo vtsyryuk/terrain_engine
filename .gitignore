@@ -8,6 +8,8 @@ Thumbs.db
 # Build directories and generated runtime output
 build/
 build-windows/
+.local-apps/
+.wine-prefix/
 cmake-build-*/
 logs/
 output/
