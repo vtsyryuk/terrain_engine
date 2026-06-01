@@ -1,0 +1,33 @@
+# Gaussian bells (field generation)
+GAUSS 1 150 150 80 80 0.6
+GAUSS 1 750 150 80 80 0.6
+GAUSS 1 150 750 80 80 0.6
+GAUSS 1 750 750 80 80 0.6
+GAUSS 1 450 450 120 120 0.8
+GAUSS -1 450 200 100 100 -0.4
+GAUSS -1 200 450 100 100 -0.4
+
+# 1) Generate the terrain field
+GENERATE
+
+# 2) Create gnuplot visualizations (3D and 2D)
+PLOT
+PLOT2D
+
+# 3) Save grayscale BMP image
+BMP_WRITE terrain.bmp
+
+# 4) Create gradient/vector data for trajectories (analysis)
+ANALIZ
+
+# 5) Create steepness/threshold map (BMP)
+SLOPE_CHECK 2.0
+
+# 6) Run component / clustering analyses (K-means)
+COMPONENT_SEARCH 2 4
+
+# 7) Run EM clustering and create overlay image
+EM_CLUSTER 3
+
+# 8) Geometry: connected components -> centers -> Delaunay & Voronoi
+GEOMETRY 8

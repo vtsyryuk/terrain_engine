@@ -1,0 +1,4 @@
+/Users/vladt/Downloads/terrain_engine_full/build/CMakeFiles/terrain_core.dir
+/Users/vladt/Downloads/terrain_engine_full/build/CMakeFiles/terrain_app.dir
+/Users/vladt/Downloads/terrain_engine_full/build/CMakeFiles/edit_cache.dir
+/Users/vladt/Downloads/terrain_engine_full/build/CMakeFiles/rebuild_cache.dir

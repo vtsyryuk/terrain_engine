@@ -1,0 +1,7 @@
+# Core pipeline configuration
+WIDTH=900
+HEIGHT=900
+SLOPE_THRESHOLD=2.0
+KMEANS_K=2
+MIN_CLUSTER_SIZE=4
+EM_K=3
