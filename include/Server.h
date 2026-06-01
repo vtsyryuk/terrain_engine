@@ -10,6 +10,7 @@ class Server : public ILandscapeOperations
 {
 public:
     Server();
+    explicit Server(const std::string& configFile);
 
     void init();
     std::string processLine(const std::string& line);
@@ -25,7 +26,7 @@ public:
     void geometry() override;
 
 private:
-    static Config loadConfig();
+    static Config loadConfig(const std::string& configFile);
     std::string executeCommand(const std::string& line);
 
     Config cfg_;

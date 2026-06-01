@@ -21,6 +21,7 @@ struct AppOptions
     std::string mode = "batch";
 #endif
     std::string commandsFile = "commands.txt";
+    std::string configFile = "config.txt";
     std::string pipeName = kDefaultPipeName;
     bool shutdown = false;
 };
@@ -48,6 +49,10 @@ AppOptions parseOptions(int argc, char* argv[])
         {
             options.pipeName = argv[++i];
         }
+        else if (arg == "--config" && i + 1 < argc)
+        {
+            options.configFile = argv[++i];
+        }
         else
         {
             options.commandsFile = arg;
@@ -67,7 +72,7 @@ void runBatch(const AppOptions& options)
 {
     prepareDirectories();
 
-    Server server;
+    Server server(options.configFile);
     server.init();
     executeCommandsFromFile(server, options.commandsFile);
 
@@ -82,7 +87,7 @@ void runServer(const AppOptions& options)
 #else
     prepareDirectories();
 
-    Server terrainServer;
+    Server terrainServer(options.configFile);
     terrainServer.init();
     NamedPipeServer server(options.pipeName);
 

@@ -7,6 +7,25 @@
 #include <algorithm>
 #include <stdexcept>
 
+namespace
+{
+double gaussianValue(const GaussianBell& bell, double x, double y)
+{
+    const double dx = x - bell.cx;
+    const double dy = y - bell.cy;
+    const double nx = dx / bell.sx;
+    const double ny = dy / bell.sy;
+    const double denom = 1.0 - bell.rho * bell.rho;
+    if (std::abs(denom) < 1e-10)
+    {
+        return 0.0;
+    }
+
+    const double q = nx * nx + ny * ny - 2.0 * bell.rho * nx * ny;
+    return bell.sign * std::exp(-0.5 * q / denom);
+}
+}
+
 TerrainEngine::TerrainEngine(int width, int height)
     : map_(width, height)
 {
@@ -49,6 +68,29 @@ void TerrainEngine::saveTerrainData(const std::string& filename) const
     {
         for (int x = 0; x < map_.width(); x += 5)
             data << x << " " << y << " " << map_.at(x, y) << "\n";
+        data << "\n";
+    }
+}
+
+void TerrainEngine::saveRawTerrainData(const std::string& filename, int step) const
+{
+    if (step <= 0)
+    {
+        step = 1;
+    }
+
+    std::ofstream data(filename);
+    for (int y = 0; y < map_.height(); y += step)
+    {
+        for (int x = 0; x < map_.width(); x += step)
+        {
+            double value = 0.0;
+            for (const auto& bell : bells_)
+            {
+                value += gaussianValue(bell, x, y);
+            }
+            data << x << " " << y << " " << value << "\n";
+        }
         data << "\n";
     }
 }

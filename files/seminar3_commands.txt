@@ -1,0 +1,7 @@
+GAUSS -1 50 50 25 25 0
+GAUSS 1 50 85 3 10 0
+GAUSS 1 50 25 3 10 0
+GAUSS 1 85 50 10 3 0
+SCAN
+PLOT 1 field.dat terrain_seminar3.png
+BMP_WRITE landscape_seminar3.bmp

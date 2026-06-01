@@ -6,6 +6,7 @@
 #include "ClusterVisualizer.h"
 #include "Analysis.h"
 #include "Logger.h"
+#include "GnuplotRenderer.h"
 
 #include <fstream>
 #include <sstream>
@@ -19,6 +20,31 @@ static std::string makeOutputPath(const std::string& filename)
     std::filesystem::path path = "output";
     path /= filename;
     return path.string();
+}
+
+static void plotFieldData(const std::string& fieldFile, const std::string& outputFile)
+{
+    std::filesystem::path dataPath = "output";
+    dataPath /= fieldFile.empty() ? "field.dat" : fieldFile;
+
+    std::filesystem::path outputPath = "output";
+    outputPath /= outputFile.empty() ? "terrain_3d.png" : outputFile;
+
+    std::ofstream gp("output/seminar_plot.gnuplot");
+    gp << "set terminal pngcairo size 1600,900\n";
+    gp << "set output '" << outputPath.string() << "'\n";
+    gp << "unset title\n";
+    gp << "set view 66,225\n";
+    gp << "set xrange [0:100]\n";
+    gp << "set yrange [0:100]\n";
+    gp << "set zrange [-1.2:1.2]\n";
+    gp << "set key right top\n";
+    gp << "set hidden3d\n";
+    gp << "splot '" << dataPath.string() << "' with lines lc rgb '#aa00ff' title '" << dataPath.string() << "'\n";
+    gp.close();
+
+    GnuplotRenderer::executeScript("output/seminar_plot.gnuplot");
+    Logger::info("Seminar wireframe plot created: " + outputPath.string());
 }
 
 CommandProcessor::CommandProcessor(
@@ -95,6 +121,12 @@ std::string CommandProcessor::executeLine(
     {
         engine_.generate();
     }
+    else if (command == "SCAN")
+    {
+        engine_.saveRawTerrainData(makeOutputPath("field.dat"), 1);
+        Logger::info("Raw field data saved: output/field.dat");
+        engine_.generate();
+    }
     else if (command == "BMP_WRITE")
     {
         std::string name;
@@ -107,7 +139,18 @@ std::string CommandProcessor::executeLine(
     }
     else if (command == "PLOT")
     {
-        Scenarios::plot3D(engine_.map());
+        std::string plotMode;
+        std::string fieldFile;
+        std::string outputFile;
+        ss >> plotMode >> fieldFile >> outputFile;
+        if (!fieldFile.empty())
+        {
+            plotFieldData(fieldFile, outputFile);
+        }
+        else
+        {
+            Scenarios::plot3D(engine_.map());
+        }
     }
     else if (command == "PLOT2D")
     {

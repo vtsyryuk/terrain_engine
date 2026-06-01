@@ -22,6 +22,7 @@ public:
     void saveBMP(const std::string& filename) const;
 
     void saveTerrainData(const std::string& filename) const;
+    void saveRawTerrainData(const std::string& filename, int step = 1) const;
 
     void render3DGnuplot() const;
 
