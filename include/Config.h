@@ -13,6 +13,8 @@ struct Config {
     int maxK = 5;
     int clientConnectRetries = 30;
     int clientConnectRetryDelayMs = 250;
+    int clientConnectRetryMaxDelayMs = 5000;
+    std::string clientConnectRetryStrategy = "fixed";
 
     void load(const std::string& filename);
 };

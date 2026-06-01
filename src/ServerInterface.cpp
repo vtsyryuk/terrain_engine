@@ -8,8 +8,18 @@
 #include <stdexcept>
 #include <utility>
 
-ServerInterface::ServerInterface(std::string pipeName, int maxConnectAttempts, int retryDelayMs)
-    : pipeClient_(std::move(pipeName), maxConnectAttempts, retryDelayMs)
+ServerInterface::ServerInterface(
+    std::string pipeName,
+    int maxConnectAttempts,
+    int retryDelayMs,
+    int maxRetryDelayMs,
+    std::string retryStrategy)
+    : pipeClient_(
+          std::move(pipeName),
+          maxConnectAttempts,
+          retryDelayMs,
+          maxRetryDelayMs,
+          std::move(retryStrategy))
 {
 }
 

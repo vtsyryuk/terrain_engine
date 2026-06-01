@@ -138,7 +138,9 @@ void runClient(const AppOptions& options)
     ServerInterface server(
         options.pipeName,
         config.clientConnectRetries,
-        config.clientConnectRetryDelayMs);
+        config.clientConnectRetryDelayMs,
+        config.clientConnectRetryMaxDelayMs,
+        config.clientConnectRetryStrategy);
     server.executeFile(options.commandsFile);
 
     if (options.shutdown)

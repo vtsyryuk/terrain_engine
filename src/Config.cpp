@@ -60,5 +60,9 @@ void Config::load(const std::string& filename)
             clientConnectRetries = std::stoi(value);
         else if (key == "CLIENT_CONNECT_RETRY_DELAY_MS")
             clientConnectRetryDelayMs = std::stoi(value);
+        else if (key == "CLIENT_CONNECT_RETRY_MAX_DELAY_MS")
+            clientConnectRetryMaxDelayMs = std::stoi(value);
+        else if (key == "CLIENT_CONNECT_RETRY_STRATEGY")
+            clientConnectRetryStrategy = value;
     }
 }

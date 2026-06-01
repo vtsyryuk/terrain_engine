@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <cstring>
 #include <algorithm>
+#include <cctype>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -23,11 +24,27 @@ NamedPipeServer::NamedPipeServer(std::string pipeName)
 {
 }
 
-NamedPipeClient::NamedPipeClient(std::string pipeName, int maxConnectAttempts, int retryDelayMs)
+NamedPipeClient::NamedPipeClient(
+    std::string pipeName,
+    int maxConnectAttempts,
+    int retryDelayMs,
+    int maxRetryDelayMs,
+    std::string retryStrategy)
     : pipeName_(std::move(pipeName)),
       maxConnectAttempts_(std::max(1, maxConnectAttempts)),
-      retryDelayMs_(std::max(1, retryDelayMs))
+      retryDelayMs_(std::max(1, retryDelayMs)),
+      maxRetryDelayMs_(std::max(retryDelayMs_, maxRetryDelayMs)),
+      retryStrategy_(std::move(retryStrategy))
 {
+    std::transform(retryStrategy_.begin(), retryStrategy_.end(), retryStrategy_.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+
+    if (retryStrategy_ != "fixed" && retryStrategy_ != "linear" && retryStrategy_ != "exponential")
+    {
+        Logger::warn("Unknown client retry strategy '" + retryStrategy_ + "', using fixed");
+        retryStrategy_ = "fixed";
+    }
 }
 
 namespace
@@ -46,6 +63,52 @@ std::string commandSummary(const std::string& command)
     }
 
     return command;
+}
+
+int retryDelayForAttempt(int baseDelayMs, int maxDelayMs, const std::string& strategy, int attempt)
+{
+    long long delay = baseDelayMs;
+    if (strategy == "linear")
+    {
+        delay = static_cast<long long>(baseDelayMs) * (attempt + 1);
+    }
+    else if (strategy == "exponential")
+    {
+        delay = baseDelayMs;
+        for (int i = 0; i < attempt; ++i)
+        {
+            delay *= 2;
+            if (delay >= maxDelayMs)
+            {
+                return maxDelayMs;
+            }
+        }
+    }
+
+    return static_cast<int>(std::min<long long>(delay, maxDelayMs));
+}
+
+void logClientRetry(
+    const std::string& pipeName,
+    const std::string& reason,
+    int attempt,
+    int maxAttempts,
+    int delayMs,
+    const std::string& strategy)
+{
+    Logger::warn(
+        "Connect attempt " + std::to_string(attempt + 1) + "/"
+        + std::to_string(maxAttempts) + " to " + pipeName
+        + " failed: " + reason
+        + "; retrying in " + std::to_string(delayMs)
+        + " ms (" + strategy + ")");
+}
+
+void logClientRetriesExhausted(const std::string& pipeName, int maxAttempts)
+{
+    Logger::error(
+        "No server at " + pipeName + " after "
+        + std::to_string(maxAttempts) + " connect attempts");
 }
 }
 
@@ -166,13 +229,34 @@ std::string NamedPipeClient::send(const std::string& command) const
         if (pipe == INVALID_HANDLE_VALUE)
         {
             const DWORD err = GetLastError();
+            const bool hasMoreAttempts = attempt + 1 < maxConnectAttempts_;
+            const int delayMs = retryDelayForAttempt(
+                retryDelayMs_,
+                maxRetryDelayMs_,
+                retryStrategy_,
+                attempt);
+            if (hasMoreAttempts)
+            {
+                logClientRetry(
+                    pipeName_,
+                    "WinAPI error " + std::to_string(err),
+                    attempt,
+                    maxConnectAttempts_,
+                    delayMs,
+                    retryStrategy_);
+            }
+            else
+            {
+                break;
+            }
+
             if (err == ERROR_PIPE_BUSY)
             {
-                WaitNamedPipeA(pipeName_.c_str(), static_cast<DWORD>(retryDelayMs_));
+                WaitNamedPipeA(pipeName_.c_str(), static_cast<DWORD>(delayMs));
                 continue;
             }
 
-            Sleep(static_cast<DWORD>(retryDelayMs_));
+            Sleep(static_cast<DWORD>(delayMs));
             continue;
         }
 
@@ -198,6 +282,7 @@ std::string NamedPipeClient::send(const std::string& command) const
         return std::string(buffer, bytesRead);
     }
 
+    logClientRetriesExhausted(pipeName_, maxConnectAttempts_);
     return "ERROR: No server pipe after "
         + std::to_string(maxConnectAttempts_) + " connect attempts";
 }
@@ -424,10 +509,29 @@ std::string NamedPipeClient::send(const std::string& command) const
             return std::string(buffer, static_cast<std::size_t>(bytesRead));
         }
 
+        const int connectErrno = errno;
         closeIfValid(fd);
-        usleep(static_cast<useconds_t>(retryDelayMs_) * 1000);
+
+        const bool hasMoreAttempts = attempt + 1 < maxConnectAttempts_;
+        const int delayMs = retryDelayForAttempt(
+            retryDelayMs_,
+            maxRetryDelayMs_,
+            retryStrategy_,
+            attempt);
+        if (hasMoreAttempts)
+        {
+            logClientRetry(
+                pipeName_,
+                std::strerror(connectErrno),
+                attempt,
+                maxConnectAttempts_,
+                delayMs,
+                retryStrategy_);
+            usleep(static_cast<useconds_t>(delayMs) * 1000);
+        }
     }
 
+    logClientRetriesExhausted(pipeName_, maxConnectAttempts_);
     return "ERROR: No server at Unix socket " + pipeName_ + " after "
         + std::to_string(maxConnectAttempts_) + " connect attempts";
 }

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>
+#include <csignal>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -51,6 +53,10 @@ struct Settings
     int width = 100;
     int height = 100;
     double noise_level = 0.0;
+    int client_connect_retries = 30;
+    int client_connect_retry_delay_ms = 250;
+    int client_connect_retry_max_delay_ms = 5000;
+    string client_connect_retry_strategy = "fixed";
 
     void load(const string& path)
     {
@@ -72,6 +78,10 @@ struct Settings
             if (key == "WIDTH") width = stoi(val);
             else if (key == "HEIGHT") height = stoi(val);
             else if (key == "NOISE_LEVEL") noise_level = stod(val);
+            else if (key == "CLIENT_CONNECT_RETRIES") client_connect_retries = stoi(val);
+            else if (key == "CLIENT_CONNECT_RETRY_DELAY_MS") client_connect_retry_delay_ms = stoi(val);
+            else if (key == "CLIENT_CONNECT_RETRY_MAX_DELAY_MS") client_connect_retry_max_delay_ms = stoi(val);
+            else if (key == "CLIENT_CONNECT_RETRY_STRATEGY") client_connect_retry_strategy = lower(val);
         }
     }
 
@@ -85,6 +95,14 @@ struct Settings
         }
         size_t last = s.find_last_not_of(" \t\r\n");
         s = s.substr(first, last - first + 1);
+    }
+
+    static string lower(string s)
+    {
+        transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) {
+            return static_cast<char>(tolower(ch));
+        });
+        return s;
     }
 };
 
@@ -1025,46 +1043,205 @@ AppOptions parseOptions(int argc, char* argv[])
 }
 
 #ifdef _WIN32
-string pipeRequest(const string& pipeName, const string& command)
-{
-    HANDLE pipe = CreateFileA(
-        pipeName.c_str(),
-        GENERIC_READ | GENERIC_WRITE,
-        0,
-        NULL,
-        OPEN_EXISTING,
-        0,
-        NULL
-    );
+static volatile sig_atomic_t g_server_stop_requested = 0;
+static HANDLE g_active_server_pipe = INVALID_HANDLE_VALUE;
 
-    if (pipe == INVALID_HANDLE_VALUE)
+string commandSummary(const string& command)
+{
+    if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
     {
-        return "ERROR: cannot connect to pipe " + pipeName;
+        return "BATCH request (" + to_string(command.size()) + " bytes)";
     }
 
-    DWORD mode = PIPE_READMODE_MESSAGE;
-    SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
+    return command;
+}
 
-    DWORD written = 0;
-    string payload = command + "\n";
-    BOOL ok = WriteFile(pipe, payload.c_str(), static_cast<DWORD>(payload.size()), &written, NULL);
-    if (!ok)
+void logServerEvent(const string& message)
+{
+    log_mgr.system(message);
+    cout << "[SERVER] " << message << "\n";
+}
+
+void requestServerStop()
+{
+    g_server_stop_requested = 1;
+    HANDLE pipe = g_active_server_pipe;
+    if (pipe != INVALID_HANDLE_VALUE)
     {
         CloseHandle(pipe);
-        return "ERROR: cannot write to pipe";
+        g_active_server_pipe = INVALID_HANDLE_VALUE;
     }
+}
 
-    char buffer[4096] = {};
-    DWORD read = 0;
-    ok = ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, NULL);
-    CloseHandle(pipe);
-
-    if (!ok && GetLastError() != ERROR_MORE_DATA)
+BOOL WINAPI serverConsoleHandler(DWORD event)
+{
+    if (event == CTRL_C_EVENT
+        || event == CTRL_BREAK_EVENT
+        || event == CTRL_CLOSE_EVENT
+        || event == CTRL_LOGOFF_EVENT
+        || event == CTRL_SHUTDOWN_EVENT)
     {
-        return "ERROR: cannot read from pipe";
+        requestServerStop();
+        return TRUE;
     }
 
-    return string(buffer, read);
+    return FALSE;
+}
+
+void serverSignalHandler(int)
+{
+    requestServerStop();
+}
+
+void installServerStopHandlers()
+{
+    g_server_stop_requested = 0;
+    SetConsoleCtrlHandler(serverConsoleHandler, TRUE);
+    signal(SIGINT, serverSignalHandler);
+    signal(SIGTERM, serverSignalHandler);
+}
+
+void clearServerStopHandlers()
+{
+    g_active_server_pipe = INVALID_HANDLE_VALUE;
+    SetConsoleCtrlHandler(serverConsoleHandler, FALSE);
+    signal(SIGINT, SIG_DFL);
+    signal(SIGTERM, SIG_DFL);
+}
+
+int retryDelayForAttempt(const Settings& cfg, int attempt)
+{
+    const int baseDelay = max(1, cfg.client_connect_retry_delay_ms);
+    const int maxDelay = max(baseDelay, cfg.client_connect_retry_max_delay_ms);
+    long long delay = baseDelay;
+
+    if (cfg.client_connect_retry_strategy == "linear")
+    {
+        delay = static_cast<long long>(baseDelay) * (attempt + 1);
+    }
+    else if (cfg.client_connect_retry_strategy == "exponential")
+    {
+        delay = baseDelay;
+        for (int i = 0; i < attempt; ++i)
+        {
+            delay *= 2;
+            if (delay >= maxDelay) return maxDelay;
+        }
+    }
+
+    return static_cast<int>(min<long long>(delay, maxDelay));
+}
+
+string normalizedRetryStrategy(const Settings& cfg)
+{
+    if (cfg.client_connect_retry_strategy == "fixed"
+        || cfg.client_connect_retry_strategy == "linear"
+        || cfg.client_connect_retry_strategy == "exponential")
+    {
+        return cfg.client_connect_retry_strategy;
+    }
+
+    log_mgr.system("WARNING: Unknown client retry strategy '" + cfg.client_connect_retry_strategy + "', using fixed");
+    return "fixed";
+}
+
+void logClientRetry(
+    const string& pipeName,
+    DWORD errorCode,
+    int attempt,
+    int maxAttempts,
+    int delayMs,
+    const string& strategy)
+{
+    log_mgr.system(
+        "WARNING: Connect attempt " + to_string(attempt + 1) + "/"
+        + to_string(maxAttempts) + " to " + pipeName
+        + " failed: WinAPI error " + to_string(errorCode)
+        + "; retrying in " + to_string(delayMs)
+        + " ms (" + strategy + ")");
+}
+
+string pipeRequest(const string& pipeName, const string& command, const Settings& settings)
+{
+    Settings retrySettings = settings;
+    retrySettings.client_connect_retries = max(1, retrySettings.client_connect_retries);
+    retrySettings.client_connect_retry_delay_ms = max(1, retrySettings.client_connect_retry_delay_ms);
+    retrySettings.client_connect_retry_max_delay_ms = max(
+        retrySettings.client_connect_retry_delay_ms,
+        retrySettings.client_connect_retry_max_delay_ms);
+    retrySettings.client_connect_retry_strategy = normalizedRetryStrategy(retrySettings);
+
+    for (int attempt = 0; attempt < retrySettings.client_connect_retries; ++attempt)
+    {
+        HANDLE pipe = CreateFileA(
+            pipeName.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            0,
+            NULL,
+            OPEN_EXISTING,
+            0,
+            NULL
+        );
+
+        if (pipe == INVALID_HANDLE_VALUE)
+        {
+            const DWORD errorCode = GetLastError();
+            const bool hasMoreAttempts = attempt + 1 < retrySettings.client_connect_retries;
+            if (!hasMoreAttempts)
+            {
+                break;
+            }
+
+            const int delayMs = retryDelayForAttempt(retrySettings, attempt);
+            logClientRetry(
+                pipeName,
+                errorCode,
+                attempt,
+                retrySettings.client_connect_retries,
+                delayMs,
+                retrySettings.client_connect_retry_strategy);
+
+            if (errorCode == ERROR_PIPE_BUSY)
+            {
+                WaitNamedPipeA(pipeName.c_str(), static_cast<DWORD>(delayMs));
+            }
+            else
+            {
+                Sleep(static_cast<DWORD>(delayMs));
+            }
+            continue;
+        }
+
+        DWORD mode = PIPE_READMODE_MESSAGE;
+        SetNamedPipeHandleState(pipe, &mode, NULL, NULL);
+
+        DWORD written = 0;
+        string payload = command + "\n";
+        BOOL ok = WriteFile(pipe, payload.c_str(), static_cast<DWORD>(payload.size()), &written, NULL);
+        if (!ok)
+        {
+            CloseHandle(pipe);
+            return "ERROR: cannot write to pipe";
+        }
+
+        char buffer[4096] = {};
+        DWORD read = 0;
+        ok = ReadFile(pipe, buffer, sizeof(buffer) - 1, &read, NULL);
+        CloseHandle(pipe);
+
+        if (!ok && GetLastError() != ERROR_MORE_DATA)
+        {
+            return "ERROR: cannot read from pipe";
+        }
+
+        return string(buffer, read);
+    }
+
+    log_mgr.system(
+        "ERROR: No server pipe at " + pipeName + " after "
+        + to_string(retrySettings.client_connect_retries) + " connect attempts");
+    return "ERROR: No server pipe after "
+        + to_string(retrySettings.client_connect_retries) + " connect attempts";
 }
 
 void runServer(const AppOptions& options)
@@ -1073,9 +1250,11 @@ void runServer(const AppOptions& options)
     cfg.load(options.configFile);
 
     cout << "[INFO] Standalone server is listening on " << options.pipeName << "\n";
+    installServerStopHandlers();
 
     bool running = true;
-    while (running)
+    int clientId = 0;
+    while (running && !g_server_stop_requested)
     {
         HANDLE pipe = CreateNamedPipeA(
             options.pipeName.c_str(),
@@ -1090,16 +1269,29 @@ void runServer(const AppOptions& options)
 
         if (pipe == INVALID_HANDLE_VALUE)
         {
+            if (g_server_stop_requested)
+            {
+                break;
+            }
             cout << "[ERROR] CreateNamedPipe failed: " << GetLastError() << "\n";
+            clearServerStopHandlers();
             return;
         }
 
+        g_active_server_pipe = pipe;
         BOOL connected = ConnectNamedPipe(pipe, NULL) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
         if (!connected)
         {
-            CloseHandle(pipe);
+            if (!g_server_stop_requested)
+            {
+                CloseHandle(pipe);
+            }
+            g_active_server_pipe = INVALID_HANDLE_VALUE;
             continue;
         }
+
+        ++clientId;
+        logServerEvent("Client #" + to_string(clientId) + " connected via " + options.pipeName);
 
         char buffer[65536] = {};
         DWORD read = 0;
@@ -1110,28 +1302,44 @@ void runServer(const AppOptions& options)
             Settings::trim(command);
             if (command == "SHUTDOWN")
             {
+                logServerEvent("Client #" + to_string(clientId) + " requested server shutdown");
                 response = "SHUTDOWN";
                 running = false;
             }
             else if (command.rfind("BATCH\n", 0) == 0 || command.rfind("BATCH\r\n", 0) == 0)
             {
+                logServerEvent("Client #" + to_string(clientId) + " executing: " + commandSummary(command));
                 size_t pos = command.find('\n');
                 TerrainApp sessionApp(cfg);
                 response = executeCommandBlock(sessionApp, command.substr(pos + 1));
+                logServerEvent("Client #" + to_string(clientId) + " response: " + response);
             }
             else
             {
+                logServerEvent("Client #" + to_string(clientId) + " executing: " + commandSummary(command));
                 TerrainApp sessionApp(cfg);
                 response = executeCommand(sessionApp, command);
                 if (response == "SHUTDOWN")
                 {
                     running = false;
                 }
+                logServerEvent("Client #" + to_string(clientId) + " response: " + response);
             }
         }
         else
         {
+            if (g_server_stop_requested)
+            {
+                if (g_active_server_pipe == pipe)
+                {
+                    CloseHandle(pipe);
+                    g_active_server_pipe = INVALID_HANDLE_VALUE;
+                }
+                g_active_server_pipe = INVALID_HANDLE_VALUE;
+                break;
+            }
             response = "ERROR: cannot read command";
+            logServerEvent("Client #" + to_string(clientId) + " read failed");
         }
 
         DWORD written = 0;
@@ -1139,25 +1347,45 @@ void runServer(const AppOptions& options)
         FlushFileBuffers(pipe);
         DisconnectNamedPipe(pipe);
         CloseHandle(pipe);
+        g_active_server_pipe = INVALID_HANDLE_VALUE;
+        logServerEvent("Client #" + to_string(clientId) + " disconnected");
+        if (running && !g_server_stop_requested)
+        {
+            logServerEvent("Ready for next client");
+        }
     }
 
+    const bool stoppedBySignal = g_server_stop_requested != 0;
+    clearServerStopHandlers();
+    if (stoppedBySignal)
+    {
+        logServerEvent("Server stopped after signal");
+    }
+    else
+    {
+        logServerEvent("Server stopped after shutdown request");
+    }
     cout << "[INFO] Server stopped\n";
 }
 
-void runClient(const AppOptions& options)
+int runClient(const AppOptions& options)
 {
+    Settings cfg;
+    cfg.load(options.configFile);
+
     if (options.shutdownOnly)
     {
         cout << "[CLIENT] SHUTDOWN\n";
-        cout << "[SERVER] " << pipeRequest(options.pipeName, "SHUTDOWN") << "\n";
-        return;
+        string response = pipeRequest(options.pipeName, "SHUTDOWN", cfg);
+        cout << "[SERVER] " << response << "\n";
+        return response.rfind("ERROR:", 0) == 0 ? 1 : 0;
     }
 
     ifstream file(options.commandFile);
     if (!file.is_open())
     {
         cout << "[ERROR] Cannot open command file: " << options.commandFile << "\n";
-        return;
+        return 1;
     }
 
     ostringstream batch;
@@ -1173,13 +1401,25 @@ void runClient(const AppOptions& options)
     }
 
     cout << "[CLIENT] Sending batch: " << options.commandFile << "\n";
-    cout << "[SERVER] " << pipeRequest(options.pipeName, batch.str()) << "\n";
+    string response = pipeRequest(options.pipeName, batch.str(), cfg);
+    cout << "[SERVER] " << response << "\n";
+    if (response.rfind("ERROR:", 0) == 0)
+    {
+        return 1;
+    }
 
     if (options.shutdown)
     {
         cout << "[CLIENT] SHUTDOWN\n";
-        cout << "[SERVER] " << pipeRequest(options.pipeName, "SHUTDOWN") << "\n";
+        response = pipeRequest(options.pipeName, "SHUTDOWN", cfg);
+        cout << "[SERVER] " << response << "\n";
+        if (response.rfind("ERROR:", 0) == 0)
+        {
+            return 1;
+        }
     }
+
+    return 0;
 }
 #else
 void runServer(const AppOptions&)
@@ -1187,9 +1427,10 @@ void runServer(const AppOptions&)
     cout << "[ERROR] Windows Named Pipes are available only on Windows\n";
 }
 
-void runClient(const AppOptions&)
+int runClient(const AppOptions&)
 {
     cout << "[ERROR] Windows Named Pipes are available only on Windows\n";
+    return 1;
 }
 #endif
 
@@ -1208,8 +1449,7 @@ int main(int argc, char* argv[])
 
     if (options.mode == "client")
     {
-        runClient(options);
-        return 0;
+        return runClient(options);
     }
 
     Settings cfg;

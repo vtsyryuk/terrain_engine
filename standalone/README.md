@@ -44,3 +44,18 @@ The parallel runner starts one shared server and three client sessions against t
 ```
 
 Each client sends its whole command file as one batch request, so the server handles seminar1, seminar2 and seminar3 as separate sessions.
+
+The server prints and logs each client connection, command execution, response, disconnect, and readiness for the next client. Pressing `Ctrl+C` or closing/terminating the console requests server shutdown and closes the active pipe handle so the server can exit cleanly.
+
+## Client Retry Settings
+
+The Windows client retries Named Pipe connection failures according to `seminar_config.txt`:
+
+```text
+CLIENT_CONNECT_RETRIES=30
+CLIENT_CONNECT_RETRY_DELAY_MS=250
+CLIENT_CONNECT_RETRY_MAX_DELAY_MS=5000
+CLIENT_CONNECT_RETRY_STRATEGY=fixed
+```
+
+Supported strategies are `fixed`, `linear`, and `exponential`. Each failed retry is printed to the console and written to `logs\app_system.log`.
