@@ -1,2 +1,5 @@
 .DS_Store
 terrain_engine_source.zip
+logs/*
+build/*
+output/*
