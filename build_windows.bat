@@ -3,52 +3,63 @@ setlocal EnableExtensions
 
 cd /d "%~dp0"
 
+set "SRC=gauss_with_clusters.cpp"
 set "BUILD_DIR=build-windows"
-set "CONFIG=Release"
-set "APP_EXE=%BUILD_DIR%\%CONFIG%\terrain_app.exe"
+set "APP_EXE=%BUILD_DIR%\gauss_with_clusters.exe"
 
-where cmake >NUL 2>NUL
-if errorlevel 1 (
-    echo [ERROR] CMake was not found in PATH.
-    echo Install CMake and enable "Add CMake to the system PATH".
+if not exist "%SRC%" (
+    echo [ERROR] Cannot find %SRC%
     exit /b 1
 )
 
-echo [INFO] Configuring Visual Studio build...
-cmake -S . -B "%BUILD_DIR%" -G "Visual Studio 17 2022" -A x64
-if errorlevel 1 (
-    echo.
-    echo [WARN] Visual Studio 2022 generator failed.
-    echo [INFO] Trying MinGW Makefiles...
-    cmake -S . -B "%BUILD_DIR%" -G "MinGW Makefiles"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Could not configure the project.
-        echo Install Visual Studio 2022 C++ tools or MinGW-w64, then try again.
-        exit /b 1
-    )
+if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
-    echo [INFO] Building MinGW target...
-    cmake --build "%BUILD_DIR%"
-    if errorlevel 1 exit /b %errorlevel%
+set "CXX="
+where gcc >NUL 2>NUL
+if not errorlevel 1 set "CXX=gcc"
 
-    set "APP_EXE=%BUILD_DIR%\terrain_app.exe"
+if "%CXX%"=="" (
+    where g++ >NUL 2>NUL
+    if not errorlevel 1 set "CXX=g++"
+)
+
+if "%CXX%"=="" (
+    echo [ERROR] GCC was not found in PATH.
+    echo Install MinGW-w64 or the Code::Blocks package with MinGW.
+    echo Then add the compiler bin folder to PATH, for example:
+    echo   C:\Program Files\CodeBlocks\MinGW\bin
+    exit /b 1
+)
+
+echo [INFO] Compiler: %CXX%
+echo [INFO] Building standalone %SRC%...
+
+if /I "%CXX%"=="gcc" (
+    gcc -x c++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -lstdc++ -o "%APP_EXE%"
 ) else (
-    echo [INFO] Building Visual Studio target...
-    cmake --build "%BUILD_DIR%" --config "%CONFIG%"
-    if errorlevel 1 exit /b %errorlevel%
+    g++ -std=c++17 -Wall -Wextra -pedantic "%SRC%" -o "%APP_EXE%"
+)
+
+if errorlevel 1 (
+    echo [ERROR] Build failed.
+    exit /b %errorlevel%
 )
 
 echo.
 echo [OK] Built: %APP_EXE%
 echo.
-echo Run server:
-echo   %APP_EXE% --server
+echo Run PDF field1 sample:
+echo   "%APP_EXE%" files\field1_commands.txt files\seminar_config.txt
 echo.
-echo Run client:
-echo   %APP_EXE% --client commands.txt --shutdown
+echo Run the default sample:
+echo   "%APP_EXE%" files\seminar1_commands.txt files\seminar_config.txt
 echo.
-echo Run seminar sample:
-echo   %APP_EXE% --config files\seminar_config.txt files\seminar1_commands.txt
+echo Run seminar 2:
+echo   "%APP_EXE%" files\seminar2_commands.txt files\seminar_config.txt
+echo.
+echo Run seminar 3:
+echo   "%APP_EXE%" files\seminar3_commands.txt files\seminar_config.txt
+echo.
+echo Output files will be written to the output\ folder.
 
 endlocal

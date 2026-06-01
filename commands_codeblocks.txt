@@ -1,7 +1,0 @@
-GAUSS 1 50 50 10 30 0
-GAUSS 1 20 10 5 5 0
-GAUSS 1 80 10 5 5 0
-GAUSS -1 20 80 5 5 0
-SCAN
-PLOT 1 field.dat terrain_codeblocks.png
-BMP_WRITE landscape_codeblocks.bmp

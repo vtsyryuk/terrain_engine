@@ -1,0 +1,18 @@
+GAUSS 1 50 50 10 30 40
+GAUSS 1 20 10 5 5 40
+GAUSS 1 80 10 5 5 40
+GAUSS 0 20 80 5 5 40
+
+GENERATE
+
+GNUPLOT_FILE 1 to field.dat
+
+BMP_WRITE 1 to field1.bmp
+
+TRAJECTORIES 1 to trajectories.bmp
+DELONE trajectories.bmp to fied1_delaunay.bmp
+
+KMEANS 2 trajectories.bmp to landscape_kmeans.bmp
+
+EM 3 trajectories.bmp to fied_em_3.bmp
+EXIT
