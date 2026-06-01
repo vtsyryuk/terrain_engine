@@ -8,12 +8,23 @@
 
 ### Общая структура
 
-Проект построен на базе единого исполняемого файла `terrain_app`, который использует статическую библиотеку `libterrain_core.a`. Все модули имеют четкие границы ответственности:
+Программный комплекс построен на основе клиент-серверной архитектуры с использованием именованных каналов Windows (Named Pipes) в качестве транспортного механизма. Основные удобства:
+
+1. Четкое разделение ответственности: клиент отвечает только за взаимодействие с пользователем и отправку команд, сервер — за всю вычислительную работу.
+2. Возможность повторного использования: один экземпляр сервера может обслуживать множество клиентских сессий.
+3. Устойчивость к сбоям: клиент и сервер работают в разных процессах, что предотвращает полное падение системы при ошибке в одном из компонентов.
+4. Потенциал для распределенных вычислений: архитектура допускает размещение клиента и сервера на разных машинах при переходе на сетевые каналы.
+5. Удобство отладки и тестирования: компоненты могут тестироваться независимо друг от друга.
+
+Проект собирает исполняемый файл `terrain_app`, который использует статическую библиотеку `libterrain_core.a`. На Windows приложение может запускаться как сервер или клиент Named Pipes; на macOS/Linux сохраняется последовательный batch-режим для разработки и проверки основной вычислительной логики.
 
 ```
-terrain_app
+terrain_app --client commands.txt
+    ↓ Named Pipe: \\.\pipe\TerrainPipe
+terrain_app --server
     ↓
-CommandProcessor (управление командами)
+Server : ILandscapeOperations (вычислительная логика)
+    ├→ CommandProcessor (совместимый парсер команд)
     ├→ TerrainEngine (генерация и визуализация)
     ├→ Scenarios (анализ и фильтрация)
     ├→ Analysis (кластеризация)
@@ -139,7 +150,29 @@ GnuplotRenderer::executeScript(script_path)
 - Запускает gnuplot с заданным скриптом
 - Захватывает вывод для логирования ошибок
 
-### 8. CommandProcessor
+### 8. Server и ILandscapeOperations
+**Файлы**: `include/ILandscapeOperations.h`, `include/Server.h`, `src/Server.cpp`
+
+Серверная часть реализует интерфейс из учебника:
+
+```cpp
+class ILandscapeOperations {
+public:
+    virtual void addGauss(int sign, double cx, double cy, double sx, double sy, double rho) = 0;
+    virtual void generate() = 0;
+    virtual void plot() = 0;
+    virtual void plot2D() = 0;
+    virtual void saveBMP(const std::string& filename = "") = 0;
+    virtual void analiz() = 0;
+    virtual void slopeCheck() = 0;
+    virtual void componentSearch() = 0;
+    virtual void geometry() = 0;
+};
+```
+
+`Server` хранит состояние ландшафта между командами клиента: добавленные гауссовы колокола, карту высот и параметры из `config.txt`.
+
+### 9. CommandProcessor
 **Файлы**: `include/CommandProcessor.h`, `src/CommandProcessor.cpp`
 
 Парсер и исполнитель команд из файла `commands.txt`.
@@ -158,14 +191,32 @@ EM_CLUSTER k                    # EM кластеризация
 GEOMETRY min_size               # Триангуляция Делоне
 ```
 
-### 9. Logger и LogManager
+### 10. NamedPipeTransport и ServerInterface
+**Файлы**: `include/NamedPipeTransport.h`, `src/NamedPipeTransport.cpp`
+
+Транспортный слой для взаимодействия клиента и сервера через Windows Named Pipes.
+
+**Режимы запуска**:
+```bash
+terrain_app --server
+terrain_app --client commands.txt
+terrain_app --client commands.txt --shutdown
+```
+
+- `NamedPipeServer` создает канал `\\.\pipe\TerrainPipe`, принимает команды и передает их в `Server`.
+- `PipeClient` подключается к каналу, при необходимости запускает сервер через `CreateProcessW`.
+- `ServerInterface` предоставляет клиентский фасад для команд `gauss`, `generate`, `plot`, `plot2D`, `saveBMP`, `analiz`, `slopeCheck`, `componentSearch`, `geometry`.
+- Флаг `--shutdown` отправляет серверу служебную команду завершения после выполнения файла.
+
+### 11. Logger и LogManager
 **Файлы**: 
 - `include/Logger.h`, `src/Logger.cpp`
 - `include/LogManager.h`, `src/LogManager.cpp`
 
 Система логирования в два файла:
-- `logs/app_system.log` — сообщения системы
-- `logs/app_user.log` — пользовательские сообщения
+- `logs/server_system.log` / `logs/server_user.log` — серверные логи
+- `logs/client_system.log` / `logs/client_user.log` — клиентские логи
+- `logs/app_system.log` / `logs/app_user.log` — batch-режим на macOS/Linux
 
 ```cpp
 Logger::info(message);   // SYSTEM лог
@@ -174,14 +225,18 @@ Logger::warn(message);   // SYSTEM лог (внимание)
 Logger::error(message);  // SYSTEM лог (ошибка)
 ```
 
-### 10. Config
+### 12. Config
 **Файлы**: `include/Config.h`, `src/Config.cpp`
 
 Загрузчик конфигурации из файла `config.txt`:
 ```ini
-map_width=900
-map_height=900
-noise_percent=5
+WIDTH=900
+HEIGHT=900
+NOISE_LEVEL=5.0
+KMEANS_K=2
+SLOPE_THRESHOLD=2.0
+MIN_CLUSTER_SIZE=2
+MAX_K=5
 ```
 
 ## Поток выполнения
@@ -216,7 +271,7 @@ noise_percent=5
 ## Выходные файлы
 
 ### BMP Файлы (8-бит, оттенки серого)
-- `terrain.bmp` — исходная высотная карта (900×900)
+- `my_landscape.bmp` — исходная высотная карта (900×900)
 - `steepness_map.bmp` — карта крутизны (черное = плоское, белое = крутое)
 
 ### PNG Файлы (gnuplot)
@@ -235,8 +290,8 @@ noise_percent=5
 - `points_centers.txt` — центры компонент
 
 ### Скрипты Gnuplot
-- `plot3d.gnuplot` — скрипт для 3D визуализации
-- `plot2d.gnuplot` — скрипт для 2D визуализации
+- `my_plot_script.gnuplot` — скрипт для 3D визуализации
+- `my_plot_2d.gnuplot` — скрипт для 2D визуализации
 - `plot_clusters.gnuplot` — скрипт для наложения кластеров
 - `plot_geometry.gnuplot` — скрипт для геометрии
 
@@ -278,7 +333,7 @@ GAUSS 1 450 450 150 150 0.8
 GENERATE
 PLOT
 PLOT2D
-BMP_WRITE terrain.bmp
+BMP_WRITE my_landscape.bmp
 ```
 
 ### Пример 2: Анализ крутизны
@@ -288,7 +343,7 @@ GAUSS -1 450 450 100 100 -0.4
 GENERATE
 ANALIZ
 SLOPE_CHECK 1.5
-BMP_WRITE terrain.bmp
+BMP_WRITE my_landscape.bmp
 ```
 
 ### Пример 3: Кластеризация
@@ -356,4 +411,3 @@ $$p(x) = \sum_{k=1}^{K} \pi_k \mathcal{N}(x | \mu_k, \Sigma_k)$$
 - Применение классических алгоритмов (K-means, EM, Делоне)
 - Интеграцию с gnuplot для визуализации
 - логирование и обработку ошибок
-

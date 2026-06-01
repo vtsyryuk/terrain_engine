@@ -13,6 +13,8 @@ class TerrainEngine
 public:
     TerrainEngine(int width, int height);
 
+    void setNoisePercent(double noisePercent);
+
     void addGaussian(const GaussianBell& bell);
 
     void generate();
@@ -36,4 +38,6 @@ private:
     void normalize();
 
     LandscapeMap map_;
+    std::vector<GaussianBell> bells_;
+    double noisePercent_ = 5.0;
 };

@@ -1,6 +1,7 @@
 
 #include "TerrainEngine.h"
 #include "GnuplotRenderer.h"
+#include "Scenarios.h"
 #include <fstream>
 #include <cmath>
 #include <algorithm>
@@ -9,6 +10,11 @@
 TerrainEngine::TerrainEngine(int width, int height)
     : map_(width, height)
 {
+}
+
+void TerrainEngine::setNoisePercent(double noisePercent)
+{
+    noisePercent_ = std::max(0.0, noisePercent);
 }
 
 void TerrainEngine::addGaussian(const GaussianBell& bell)
@@ -22,12 +28,13 @@ void TerrainEngine::addGaussian(const GaussianBell& bell)
         throw std::runtime_error("rho must be in (-1,1)");
     }
 
-    map_.add(bell);
+    bells_.push_back(bell);
 }
 
 void TerrainEngine::generate()
 {
-    normalize();
+    map_.clear();
+    Scenarios::fieldGeneration(map_, bells_, noisePercent_);
 }
 
 void TerrainEngine::saveBMP(const std::string& filename) const

@@ -7,6 +7,7 @@
 #include <queue>
 #include <cmath>
 #include <algorithm>
+#include <cstdlib>
 
 using namespace std;
 
@@ -122,8 +123,12 @@ namespace Scenarios {
 void applyNoise(LandscapeMap& map, double percent)
 {
     if (percent <= 0.0) return;
-    random_device rd;
-    mt19937 gen(rd());
+    unsigned seed = 0;
+    if (const char* envSeed = std::getenv("TERRAIN_NOISE_SEED"))
+    {
+        seed = static_cast<unsigned>(std::stoul(envSeed));
+    }
+    mt19937 gen(seed);
     uniform_real_distribution<double> dis(0.0, 1.0);
     int affected = 0;
     for (int y = 0; y < map.height(); ++y)
@@ -253,14 +258,14 @@ void plot3D(const LandscapeMap& map)
     }
     data.close();
 
-    ofstream gp("output/plot3d.gnuplot");
+    ofstream gp("output/my_plot_script.gnuplot");
     gp << "set terminal pngcairo size 1200,900\n";
     gp << "set output 'output/terrain_3d.png'\n";
     gp << "set title 'Terrain Field (3D)'\n";
     gp << "set pm3d\n";
     gp << "splot 'output/terrain_data.txt' with pm3d\n";
     gp.close();
-    GnuplotRenderer::executeScript("output/plot3d.gnuplot");
+    GnuplotRenderer::executeScript("output/my_plot_script.gnuplot");
     Logger::info("3D Plot created: output/terrain_3d.png");
 }
 
@@ -274,12 +279,12 @@ void plot2D(const LandscapeMap& map)
     }
     data.close();
 
-    ofstream gp("output/plot2d.gnuplot");
+    ofstream gp("output/my_plot_2d.gnuplot");
     gp << "set terminal pngcairo size 900,900\n";
     gp << "set output 'output/terrain_2d.png'\n";
     gp << "plot 'output/terrain_data_2d.txt' with image\n";
     gp.close();
-    GnuplotRenderer::executeScript("output/plot2d.gnuplot");
+    GnuplotRenderer::executeScript("output/my_plot_2d.gnuplot");
     Logger::info("2D Heatmap created: output/terrain_2d.png");
 }
 
@@ -302,13 +307,11 @@ void slopeCheck(const LandscapeMap& map, double threshold)
 {
     LandscapeMap check(map.width(), map.height());
     if (threshold <= 0.0) threshold = 1.0;
-    double scale = 255.0 / threshold;
     for (int y = 1; y < map.height() - 1; ++y)
         for (int x = 1; x < map.width() - 1; ++x) {
             auto g = map.gradient(x,y);
             double steep = sqrt(g.first*g.first + g.second*g.second);
-            double value = steep * scale;
-            check.at(x,y) = max(0.0, min(255.0, value));
+            check.at(x,y) = steep < threshold ? 255.0 : 0.0;
         }
     writeBMP(check, "output/steepness_map.bmp");
     Logger::info("Steepness map created (threshold = " + to_string(threshold) + ")");

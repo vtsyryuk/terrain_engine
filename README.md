@@ -27,13 +27,28 @@ cmake --build build
 ./build/terrain_app
 ```
 
-Программа читает `commands.txt` и последовательно выполняет сценарии генерации, анализа и визуализации.
+По умолчанию программа читает `commands.txt` и последовательно выполняет сценарии генерации, анализа и визуализации.
+
+## Клиент-серверный режим Windows Named Pipes
+
+На Windows приложение можно запустить как сервер вычислений и отдельный клиент команд:
+
+```bash
+terrain_app --server
+terrain_app --client commands.txt
+```
+
+Клиент отправляет команды через канал `\\.\pipe\TerrainPipe`, а сервер выполняет генерацию, анализ и сохранение файлов. Чтобы после выполнения команд остановить сервер, используйте:
+
+```bash
+terrain_app --client commands.txt --shutdown
+```
 
 ## Что создаётся
 
 Основные файлы заметны в папке `output/`:
 
-- `output/terrain.bmp`
+- `output/my_landscape.bmp`
 - `output/terrain_3d.png`
 - `output/terrain_2d.png`
 - `output/gradient_vectors.txt`
@@ -44,13 +59,14 @@ cmake --build build
 - `output/my_delaunay_voronoi.png`
 - `output/delaunay.txt`
 - `output/voronoi.txt`
+- `output/points_centers.txt`
 
 Дополнительные вспомогательные файлы также могут появляться в `output/`:
 
-- `output/plot3d.gnuplot`
-- `output/plot2d.gnuplot`
+- `output/my_plot_script.gnuplot`
+- `output/my_plot_2d.gnuplot`
 - `output/plot_clusters.gnuplot`
-- `output/output/plot_geometry.gnuplot`
+- `output/plot_geometry.gnuplot`
 - `output/terrain_data.txt`
 - `output/terrain_data_2d.txt`
 

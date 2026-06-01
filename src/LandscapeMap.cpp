@@ -22,6 +22,14 @@ double LandscapeMap::at(int x, int y) const
 int LandscapeMap::width() const { return width_; }
 int LandscapeMap::height() const { return height_; }
 
+void LandscapeMap::clear()
+{
+    for (auto& row : data_)
+    {
+        std::fill(row.begin(), row.end(), 0.0);
+    }
+}
+
 void LandscapeMap::add(const GaussianBell& b)
 {
     for (int y=0;y<height_;y++) for (int x=0;x<width_;x++) {

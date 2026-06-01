@@ -10,57 +10,61 @@
 static const char* LOG_DIR = "logs";
 
 LogManager::LogManager() {}
-LogManager::~LogManager() {}
+LogManager::~LogManager()
+{
+    if (system_log_.is_open()) system_log_.close();
+    if (user_log_.is_open()) user_log_.close();
+}
 
 void LogManager::setup(const std::string& role)
 {
+    role_ = role;
+    enabled_ = true;
     namespace fs = std::filesystem;
     try {
         if (!fs::exists(LOG_DIR)) fs::create_directory(LOG_DIR);
-    } catch (...) {}
+    } catch (...) {
+        enabled_ = false;
+        return;
+    }
 
     std::string sysFile = std::string(LOG_DIR) + "/" + role + "_system.log";
     std::string usrFile = std::string(LOG_DIR) + "/" + role + "_user.log";
 
-    // Open files and write header
-    std::ofstream system_log(sysFile, std::ios::app);
-    std::ofstream user_log(usrFile, std::ios::app);
-    if (system_log.is_open()) {
-        auto t = std::chrono::system_clock::now();
-        auto tt = std::chrono::system_clock::to_time_t(t);
-        system_log << "[" << std::put_time(std::localtime(&tt), "%Y-%m-%d %H:%M:%S") << "] SYSTEM: Log started for " << role << "\n";
-    }
-    if (user_log.is_open()) {
-        auto t = std::chrono::system_clock::now();
-        auto tt = std::chrono::system_clock::to_time_t(t);
-        user_log << "[" << std::put_time(std::localtime(&tt), "%Y-%m-%d %H:%M:%S") << "] USER: Log started for " << role << "\n";
+    if (system_log_.is_open()) system_log_.close();
+    if (user_log_.is_open()) user_log_.close();
+
+    system_log_.open(sysFile, std::ios::app);
+    user_log_.open(usrFile, std::ios::app);
+    enabled_ = system_log_.is_open() && user_log_.is_open();
+
+    if (enabled_) {
+        log_system("Log started for " + role);
+        log_user("Log started for " + role);
     }
 }
 
 void LogManager::log_system(const std::string& msg)
 {
-    namespace fs = std::filesystem;
-    std::string sysFile = std::string(LOG_DIR) + "/app_system.log";
-    std::ofstream system_log(sysFile, std::ios::app);
-    if (!system_log.is_open()) return;
+    if (!enabled_ || !system_log_.is_open()) return;
     auto t = std::chrono::system_clock::now();
     auto tt = std::chrono::system_clock::to_time_t(t);
     std::stringstream ss;
     ss << "[" << std::put_time(std::localtime(&tt), "%Y-%m-%d %H:%M:%S") << "] SYSTEM: " << msg;
-    system_log << ss.str() << std::endl;
+    system_log_ << ss.str() << std::endl;
+    system_log_.flush();
     std::cout << ss.str() << std::endl;
 }
 
 void LogManager::log_user(const std::string& msg)
 {
-    std::string usrFile = std::string(LOG_DIR) + "/app_user.log";
-    std::ofstream user_log(usrFile, std::ios::app);
-    if (!user_log.is_open()) return;
+    if (!enabled_ || !user_log_.is_open()) return;
     auto t = std::chrono::system_clock::now();
     auto tt = std::chrono::system_clock::to_time_t(t);
     std::stringstream ss;
     ss << "[" << std::put_time(std::localtime(&tt), "%Y-%m-%d %H:%M:%S") << "] USER: " << msg;
-    user_log << ss.str() << std::endl;
+    user_log_ << ss.str() << std::endl;
+    user_log_.flush();
     std::cout << ss.str() << std::endl;
 }
 

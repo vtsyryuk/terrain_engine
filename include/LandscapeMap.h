@@ -26,6 +26,7 @@ public:
     int width() const;
     int height() const;
 
+    void clear();
     void normalize();
     void add(const GaussianBell& b);
     void saveBMP(const std::string& fn) const;
