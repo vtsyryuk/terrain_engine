@@ -7,9 +7,7 @@ on:
     branches: [master, main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pull-requests: read
+permissions: {}
 
 concurrency:
   group: sonarcloud-${{ github.event.pull_request.number || github.ref }}
@@ -23,23 +21,25 @@ env:
 jobs:
   verify:
     name: SonarCloud build and tests
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
       - name: Build C++ targets and record compilation database
         run: |
           python .github/scripts/build-sonar-cpp.py
       - name: Upload scanner inputs
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: sonar-inputs
           path: build/sonar/compile_commands.json
@@ -55,6 +55,9 @@ jobs:
 
   analysis:
     name: SonarCloud analysis and quality gate
+    permissions:
+      contents: read
+      pull-requests: read
     needs: verify
     # Untrusted PRs still get build/test verification, without receiving a token.
     if: vars.SONAR_ENABLED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'))
@@ -65,7 +68,7 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -77,12 +80,12 @@ jobs:
             exit 1
           fi
       - name: Download scanner inputs
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: sonar-inputs
           path: build/sonar
       - name: Analyze and enforce the quality gate
-        uses: SonarSource/sonarqube-scan-action@v8
+        uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8
         with:
           args: |
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
