@@ -33,3 +33,5 @@ jobs:
       - name: Build C++ targets and record compilation database
         run: |
           python .github/scripts/build-sonar-cpp.py
+      - name: Run the native terrain demo
+        run: bash scripts/demo.sh
