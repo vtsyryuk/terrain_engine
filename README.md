@@ -125,3 +125,7 @@ DOCUMENTATION.md
 CODEBLOCKS_WINDOWS.md
 standalone\README.md
 ```
+
+## SonarCloud
+
+See [the SonarCloud setup guide](.github/SONARCLOUD.md) for analysis, coverage, activation and quality-gate behavior.
